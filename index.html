@@ -2,41 +2,23 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Logo 3D Tool - SVG Upload</title>
-
+<title>SVG 3D Logo Tool</title>
 <style>
-body{
-  margin:0;
-  background:#111;
-  color:white;
-  font-family:Arial;
-  overflow:hidden;
-}
+body{margin:0;background:#111;color:white;font-family:Arial;overflow:hidden;}
 #ui{
-  position:absolute;
-  top:20px;
-  left:20px;
-  background:#222;
-  padding:15px;
-  border-radius:10px;
-  width:280px;
-  z-index:10;
+  position:absolute; top:20px; left:20px;
+  background:#222; padding:15px; border-radius:10px;
+  width:280px; z-index:10;
 }
-#log{
-  margin-top:10px;
-  font-size:12px;
-  background:#000;
-  padding:8px;
-  height:120px;
-  overflow:auto;
-  border-radius:6px;
+input[type=range]{width:100%;}
+button{
+  margin-top:5px; width:100%; padding:6px;
+  background:#3a7cff; border:none; color:white;
+  border-radius:5px; cursor:pointer;
 }
-input[type=range]{ width:100%; }
-button{ margin-top:5px; width:100%; padding:6px; background:#3a7cff; border:none; color:white; border-radius:5px; cursor:pointer;}
-#svgPreview{ margin-top:10px; width:100%; border:1px solid #666; background:#222;}
+#log{margin-top:10px;font-size:12px;background:#000;padding:8px;height:120px;overflow:auto;border-radius:6px;}
 </style>
 </head>
-
 <body>
 
 <div id="ui">
@@ -47,7 +29,6 @@ button{ margin-top:5px; width:100%; padding:6px; background:#3a7cff; border:none
   <button id="toggleWireframe">Toggle Wireframe</button>
   <button id="export">Export PNG</button>
   <div id="log"></div>
-  <div id="svgPreview"></div>
 </div>
 
 <script type="module">
@@ -55,7 +36,7 @@ import * as THREE from "https://esm.sh/three@0.152.2?bundle";
 import { SVGLoader } from "https://esm.sh/three@0.152.2/examples/jsm/loaders/SVGLoader.js?bundle";
 import { OrbitControls } from "https://esm.sh/three@0.152.2/examples/jsm/controls/OrbitControls.js?bundle";
 
-/* -------- LOGGING -------- */
+/* LOGGING */
 function log(msg){
   const el=document.getElementById("log");
   const time=new Date().toLocaleTimeString();
@@ -65,33 +46,33 @@ function log(msg){
 }
 log("App started");
 
-/* -------- THREE.JS SETUP -------- */
-let scene = new THREE.Scene();
-let camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 2000);
+/* THREE SETUP */
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 2000);
 camera.position.set(0,0,400);
 
-let renderer = new THREE.WebGLRenderer({antialias:true, alpha:true, preserveDrawingBuffer:true});
+const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true, preserveDrawingBuffer:true});
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-/* -------- LIGHTS -------- */
+/* LIGHTS */
 scene.add(new THREE.AmbientLight(0xffffff,1.2));
-const directional = new THREE.DirectionalLight(0xffffff,1);
-directional.position.set(200,200,300);
-scene.add(directional);
+const dirLight = new THREE.DirectionalLight(0xffffff,1);
+dirLight.position.set(200,200,300);
+scene.add(dirLight);
 
-/* -------- CONTROLS -------- */
+/* CONTROLS */
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.05;
-controls.enableZoom = true;
+controls.enableDamping=true;
+controls.dampingFactor=0.05;
+controls.enableZoom=true;
 
-/* -------- VARIABLES -------- */
-let mesh = null;
-let shapes = [];
+/* VARIABLES */
+let mesh=null;
+let shapes=[];
 let wireframe=false;
 
-/* -------- BUILD 3D MESH -------- */
+/* BUILD MESH */
 function buildMesh(){
   if(!shapes || shapes.length===0) return;
   if(mesh) scene.remove(mesh);
@@ -100,7 +81,7 @@ function buildMesh(){
   const geometry = new THREE.ExtrudeGeometry(shapes, {depth:depth, bevelEnabled:false});
   geometry.center();
 
-  const material = new THREE.MeshStandardMaterial({color:0xffffff, metalness:0.2, roughness:0.6, wireframe:wireframe});
+  const material = new THREE.MeshStandardMaterial({color:0x00ffff, metalness:0.2, roughness:0.6, wireframe:wireframe});
   mesh = new THREE.Mesh(geometry, material);
 
   // Auto-scale
@@ -116,21 +97,16 @@ function buildMesh(){
   log("Mesh built: "+shapes.length+" shapes, depth "+depth);
 }
 
-/* -------- SVG UPLOAD & PREVIEW -------- */
+/* LOAD SVG */
 function loadSVG(file){
   if(!file) return;
   const reader = new FileReader();
   reader.onload = function(e){
     const text = e.target.result;
-
-    // Display raw SVG in preview
-    const preview = document.getElementById("svgPreview");
-    preview.innerHTML = text;
-
     const loader = new SVGLoader();
     const data = loader.parse(text);
 
-    shapes = [];
+    shapes=[];
     data.paths.forEach(path=>{
       shapes.push(...path.toShapes(true));
     });
@@ -141,13 +117,10 @@ function loadSVG(file){
   reader.readAsText(file);
 }
 
-/* -------- INPUT HANDLERS -------- */
+/* INPUT HANDLERS */
 document.getElementById("upload").addEventListener("change", e=>{
   const file = e.target.files[0];
-  if(!file){
-    log("No file selected!");
-    return;
-  }
+  if(!file){ log("No file selected!"); return; }
   log("Uploaded: "+file.name+" ("+file.type+")");
   loadSVG(file);
 });
@@ -161,12 +134,12 @@ document.getElementById("toggleWireframe").onclick = ()=>{
 
 document.getElementById("export").onclick = ()=>{
   const link = document.createElement("a");
-  link.download = "logo.png";
+  link.download="logo.png";
   link.href = renderer.domElement.toDataURL();
   link.click();
 }
 
-/* -------- RENDER LOOP -------- */
+/* RENDER LOOP */
 function animate(){
   requestAnimationFrame(animate);
   controls.update();
@@ -174,9 +147,9 @@ function animate(){
 }
 animate();
 
-/* -------- RESIZE -------- */
+/* RESIZE */
 window.addEventListener("resize", ()=>{
-  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.aspect=window.innerWidth/window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
