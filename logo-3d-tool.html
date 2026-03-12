@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Logo 3D Tool</title>
+
+<style>
+
+body{
+margin:0;
+background:#111;
+color:white;
+font-family:Arial;
+overflow:hidden;
+}
+
+#ui{
+position:absolute;
+top:20px;
+left:20px;
+background:#222;
+padding:15px;
+border-radius:10px;
+width:260px;
+}
+
+#log{
+margin-top:10px;
+font-size:12px;
+background:#000;
+padding:8px;
+height:120px;
+overflow:auto;
+border-radius:6px;
+}
+
+input[type=range]{
+width:100%;
+}
+
+button{
+margin-top:10px;
+width:100%;
+padding:6px;
+background:#3a7cff;
+border:none;
+color:white;
+border-radius:5px;
+cursor:pointer;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div id="ui">
+
+<input type="file" id="upload" accept="image/png">
+
+<br><br>
+
+Thickness
+<input type="range" id="depth" min="2" max="40" value="10">
+
+<button id="export">Export PNG</button>
+
+<div id="log"></div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/imagetracerjs@1.2.6/imagetracer_v1.2.6.min.js"></script>
+
+<script type="module">
+
+import * as THREE from "https://unpkg.com/three@0.152.2/build/three.module.js"
+import { SVGLoader } from "https://unpkg.com/three@0.152.2/examples/jsm/loaders/SVGLoader.js"
+
+function log(msg){
+
+let el=document.getElementById("log")
+
+let time=new Date().toLocaleTimeString()
+
+el.innerHTML+="["+time+"] "+msg+"<br>"
+
+el.scrollTop=el.scrollHeight
+
+console.log(msg)
+
+}
+
+let scene=new THREE.Scene()
+
+let camera=new THREE.PerspectiveCamera(
+45,
+window.innerWidth/window.innerHeight,
+0.1,
+1000
+)
+
+camera.position.set(0,0,200)
+
+let renderer=new THREE.WebGLRenderer({
+antialias:true,
+alpha:true,
+preserveDrawingBuffer:true
+})
+
+renderer.setSize(window.innerWidth,window.innerHeight)
+document.body.appendChild(renderer.domElement)
+
+let mesh
+let shapes
+
+let dragging=false
+let lastX=0
+let lastY=0
+
+function buildMesh(){
+
+try{
+
+log("Building 3D mesh")
+
+if(mesh) scene.remove(mesh)
+
+let depth=document.getElementById("depth").value
+
+let geometry=new THREE.ExtrudeGeometry(
+shapes,
+{
+depth:depth,
+bevelEnabled:false
+}
+)
+
+let material=new THREE.MeshBasicMaterial({color:0xffffff})
+
+mesh=new THREE.Mesh(geometry,material)
+
+mesh.scale.set(0.3,-0.3,0.3)
+
+scene.add(mesh)
+
+log("Mesh complete")
+
+}catch(err){
+
+log("ERROR building mesh: "+err)
+
+}
+
+}
+
+function parseSVG(svgString){
+
+try{
+
+log("Parsing SVG")
+
+let loader=new SVGLoader()
+
+let data=loader.parse(svgString)
+
+shapes=[]
+
+data.paths.forEach(path=>{
+shapes.push(...path.toShapes(true))
+})
+
+log("SVG shapes found: "+shapes.length)
+
+buildMesh()
+
+}catch(err){
+
+log("ERROR parsing SVG: "+err)
+
+}
+
+}
+
+function convertPNGtoSVG(url){
+
+try{
+
+log("Loading PNG...")
+
+let img = new Image()
+
+img.onload = function(){
+
+log("Image loaded")
+
+let canvas = document.createElement("canvas")
+canvas.width = img.width
+canvas.height = img.height
+
+let ctx = canvas.getContext("2d")
+ctx.drawImage(img,0,0)
+
+log("Running vector trace...")
+
+let svg = ImageTracer.imagedataToSVG(
+ctx.getImageData(0,0,canvas.width,canvas.height),
+{
+ltres:1,
+qtres:1,
+numberofcolors:8
+}
+)
+
+log("SVG generated")
+
+parseSVG(svg)
+
+}
+
+img.src = url
+
+}catch(err){
+
+log("ERROR during vectorization: "+err)
+
+}
+
+}
+
+document.getElementById("upload").addEventListener("change",function(e){
+
+let file=e.target.files[0]
+
+log("File uploaded: "+file.name)
+
+let url=URL.createObjectURL(file)
+
+convertPNGtoSVG(url)
+
+})
+
+document.getElementById("depth").oninput=buildMesh
+
+renderer.domElement.addEventListener("mousedown",e=>{
+dragging=true
+lastX=e.clientX
+lastY=e.clientY
+})
+
+window.addEventListener("mouseup",()=>dragging=false)
+
+window.addEventListener("mousemove",e=>{
+
+if(!dragging || !mesh) return
+
+let dx=e.clientX-lastX
+let dy=e.clientY-lastY
+
+mesh.rotation.y+=dx*0.01
+mesh.rotation.x+=dy*0.01
+
+lastX=e.clientX
+lastY=e.clientY
+
+})
+
+document.getElementById("export").onclick=function(){
+
+log("Exporting PNG")
+
+let link=document.createElement("a")
+link.download="logo.png"
+link.href=renderer.domElement.toDataURL()
+link.click()
+
+}
+
+function animate(){
+
+requestAnimationFrame(animate)
+
+renderer.render(scene,camera)
+
+}
+
+animate()
+
+window.addEventListener("resize",function(){
+
+camera.aspect=window.innerWidth/window.innerHeight
+camera.updateProjectionMatrix()
+renderer.setSize(window.innerWidth,window.innerHeight)
+
+})
+
+</script>
+
+</body>
+</html>
