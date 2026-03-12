@@ -22,6 +22,7 @@ background:#222;
 padding:15px;
 border-radius:10px;
 width:260px;
+z-index:10;
 }
 
 #log{
@@ -78,18 +79,14 @@ import * as THREE from "https://esm.sh/three@0.152.2?bundle";
 import { SVGLoader } from "https://esm.sh/three@0.152.2/examples/jsm/loaders/SVGLoader.js?bundle";
 
 function log(msg){
-
-let el=document.getElementById("log")
-
-let time=new Date().toLocaleTimeString()
-
+const el=document.getElementById("log")
+const time=new Date().toLocaleTimeString()
 el.innerHTML+="["+time+"] "+msg+"<br>"
-
 el.scrollTop=el.scrollHeight
-
 console.log(msg)
-
 }
+
+log("Script loaded")
 
 let scene=new THREE.Scene()
 
@@ -111,6 +108,10 @@ preserveDrawingBuffer:true
 renderer.setSize(window.innerWidth,window.innerHeight)
 document.body.appendChild(renderer.domElement)
 
+let light=new THREE.DirectionalLight(0xffffff,1)
+light.position.set(0,0,200)
+scene.add(light)
+
 let mesh
 let shapes
 
@@ -119,6 +120,8 @@ let lastX=0
 let lastY=0
 
 function buildMesh(){
+
+if(!shapes) return
 
 try{
 
@@ -136,7 +139,13 @@ bevelEnabled:false
 }
 )
 
-let material=new THREE.MeshBasicMaterial({color:0xffffff})
+geometry.center()
+
+let material=new THREE.MeshStandardMaterial({
+color:0xffffff,
+metalness:0.4,
+roughness:0.4
+})
 
 mesh=new THREE.Mesh(geometry,material)
 
@@ -167,7 +176,10 @@ let data=loader.parse(svgString)
 shapes=[]
 
 data.paths.forEach(path=>{
-shapes.push(...path.toShapes(true))
+let newShapes=path.toShapes(true)
+if(newShapes.length>0){
+shapes.push(...newShapes)
+}
 })
 
 log("SVG shapes found: "+shapes.length)
@@ -186,24 +198,25 @@ function convertPNGtoSVG(url){
 
 try{
 
-log("Loading PNG...")
+log("Loading PNG")
 
-let img = new Image()
+let img=new Image()
+img.crossOrigin="anonymous"
 
-img.onload = function(){
+img.onload=function(){
 
 log("Image loaded")
 
-let canvas = document.createElement("canvas")
-canvas.width = img.width
-canvas.height = img.height
+let canvas=document.createElement("canvas")
+canvas.width=img.width
+canvas.height=img.height
 
-let ctx = canvas.getContext("2d")
+let ctx=canvas.getContext("2d")
 ctx.drawImage(img,0,0)
 
-log("Running vector trace...")
+log("Tracing PNG to SVG")
 
-let svg = ImageTracer.imagedataToSVG(
+let svg=ImageTracer.imagedataToSVG(
 ctx.getImageData(0,0,canvas.width,canvas.height),
 {
 ltres:1,
@@ -218,11 +231,11 @@ parseSVG(svg)
 
 }
 
-img.src = url
+img.src=url
 
 }catch(err){
 
-log("ERROR during vectorization: "+err)
+log("ERROR vectorizing PNG: "+err)
 
 }
 
@@ -231,6 +244,8 @@ log("ERROR during vectorization: "+err)
 document.getElementById("upload").addEventListener("change",function(e){
 
 let file=e.target.files[0]
+
+if(!file) return
 
 log("File uploaded: "+file.name)
 
@@ -252,7 +267,7 @@ window.addEventListener("mouseup",()=>dragging=false)
 
 window.addEventListener("mousemove",e=>{
 
-if(!dragging || !mesh) return
+if(!dragging||!mesh) return
 
 let dx=e.clientX-lastX
 let dy=e.clientY-lastY
