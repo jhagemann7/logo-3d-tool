@@ -112,6 +112,9 @@ let light=new THREE.DirectionalLight(0xffffff,1)
 light.position.set(0,0,200)
 scene.add(light)
 
+let ambient=new THREE.AmbientLight(0xffffff,1.2)
+scene.add(ambient)
+
 let mesh
 let shapes
 
@@ -143,13 +146,20 @@ geometry.center()
 
 let material=new THREE.MeshStandardMaterial({
 color:0xffffff,
-metalness:0.4,
-roughness:0.4
+metalness:0.1,
+roughness:0.6
 })
 
 mesh=new THREE.Mesh(geometry,material)
 
-mesh.scale.set(0.3,-0.3,0.3)
+const box=new THREE.Box3().setFromObject(mesh)
+const size=box.getSize(new THREE.Vector3()).length()
+const scale=120/size
+
+mesh.scale.set(scale,-scale,scale)
+
+const center=box.getCenter(new THREE.Vector3())
+mesh.position.sub(center)
 
 scene.add(mesh)
 
