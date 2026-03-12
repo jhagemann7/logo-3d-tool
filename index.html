@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>SVG 3D Logo Tool – Persistent Presets + Outline</title>
+<title>SVG 3D Logo Tool – Metallic Outline + Persistent Presets</title>
 <style>
 body{margin:0;background:#111;color:white;font-family:Arial;overflow:hidden;}
 #ui{
@@ -93,7 +93,7 @@ let outlineGroup = null;
 let pathsData = null;
 let wireframe = false;
 const pathOverrides = new Map();
-let presets = {}; // Will load from localStorage
+let presets = {}; // persistent presets
 
 /* Load presets from localStorage */
 function loadPresetsFromStorage(){
@@ -107,7 +107,7 @@ function loadPresetsFromStorage(){
 }
 loadPresetsFromStorage();
 
-/* Build mesh from paths */
+/* Build mesh */
 function buildMesh(){
   if(!pathsData) return;
   if(meshGroup) scene.remove(meshGroup);
@@ -115,14 +115,14 @@ function buildMesh(){
 
   const depth = parseFloat(document.getElementById("depth").value);
   const outlineDepth = parseFloat(document.getElementById("outlineDepth").value);
+
   meshGroup = new THREE.Group();
   outlineGroup = new THREE.Group();
 
-  pathsData.forEach((path, i) => {
+  // Main logo meshes
+  pathsData.forEach((path,i)=>{
     const shapes = path.toShapes(true);
     const color = pathOverrides.has(i) ? pathOverrides.get(i) : (path.userData.style.fill || "#ffffff");
-
-    // Main mesh
     shapes.forEach(shape=>{
       const geometry = new THREE.ExtrudeGeometry(shape,{depth:depth, bevelEnabled:false});
       const material = new THREE.MeshStandardMaterial({
@@ -131,22 +131,29 @@ function buildMesh(){
         roughness:0.2,
         wireframe: wireframe
       });
-      meshGroup.add(new THREE.Mesh(geometry, material));
+      meshGroup.add(new THREE.Mesh(geometry,material));
     });
+  });
 
-    // Outline mesh behind
-    shapes.forEach(shape=>{
-      const geometry = new THREE.ExtrudeGeometry(shape,{depth:outlineDepth, bevelEnabled:false});
-      const material = new THREE.MeshStandardMaterial({
-        color: new THREE.Color("#AAAAAA"),
-        metalness:0.9,
-        roughness:0.1,
-        wireframe: wireframe
-      });
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.z = -outlineDepth; // sit behind
-      outlineGroup.add(mesh);
+  // Single unified outline behind logo
+  let mergedShapes = [];
+  pathsData.forEach(path=>{
+    mergedShapes.push(...path.toShapes(true));
+  });
+  mergedShapes.forEach(shape=>{
+    const geometry = new THREE.ExtrudeGeometry(shape,{
+      depth:outlineDepth,
+      bevelEnabled:false
     });
+    const material = new THREE.MeshStandardMaterial({
+      color: new THREE.Color("#C0C0C0"), // always silver
+      metalness:1,
+      roughness:0.2,
+      wireframe: wireframe
+    });
+    const mesh = new THREE.Mesh(geometry,material);
+    mesh.position.z = -outlineDepth; // behind logo
+    outlineGroup.add(mesh);
   });
 
   // Flip vertically
@@ -159,12 +166,11 @@ function buildMesh(){
   const scale = 300 / size;
   meshGroup.scale.multiplyScalar(scale);
   outlineGroup.scale.multiplyScalar(scale);
-
   const center = box.getCenter(new THREE.Vector3());
   meshGroup.position.sub(center.multiplyScalar(scale));
   outlineGroup.position.sub(center.multiplyScalar(scale));
 
-  // Apply pitch/yaw sliders
+  // Apply pitch/yaw
   const pitch = parseFloat(document.getElementById("pitch").value) * Math.PI/180;
   const yaw = parseFloat(document.getElementById("yaw").value) * Math.PI/180;
   meshGroup.rotation.x = pitch;
@@ -174,6 +180,7 @@ function buildMesh(){
 
   scene.add(outlineGroup);
   scene.add(meshGroup);
+
   log(`3D SVG mesh built: ${pathsData.length} paths, depth ${depth}, outline ${outlineDepth}`);
 }
 
@@ -234,15 +241,11 @@ document.getElementById("applyOverride").onclick = ()=>{
 
 document.getElementById("toggleWireframe").onclick = ()=>{
   wireframe = !wireframe;
-  if(meshGroup){
-    meshGroup.children.forEach(child => child.material.wireframe = wireframe);
-  }
-  if(outlineGroup){
-    outlineGroup.children.forEach(child => child.material.wireframe = wireframe);
-  }
+  if(meshGroup) meshGroup.children.forEach(c=>c.material.wireframe = wireframe);
+  if(outlineGroup) outlineGroup.children.forEach(c=>c.material.wireframe = wireframe);
 };
 
-/* Presets */
+/* Presets with persistent storage */
 document.getElementById("savePreset").onclick = ()=>{
   const name = document.getElementById("presetName").value.trim();
   if(!name){ log("Enter a preset name!"); return; }
