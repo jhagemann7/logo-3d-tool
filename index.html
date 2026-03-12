@@ -1,3 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>SVG 3D Logo Tool – Metallic Outline</title>
+<style>
+body{margin:0;background:#111;color:white;font-family:Arial;overflow:hidden;}
+#ui{
+  position:absolute; top:20px; left:20px;
+  background:#222; padding:15px; border-radius:10px;
+  width:360px; z-index:10;
+  max-height:90vh; overflow-y:auto;
+}
+input[type=range], select, input[type=text]{width:100%; margin-top:5px;}
+button{margin-top:5px;width:100%;padding:6px;background:#3a7cff;border:none;color:white;border-radius:5px;cursor:pointer;}
+#log{margin-top:10px;font-size:12px;background:#000;padding:8px;height:120px;overflow:auto;border-radius:6px;}
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <input type="file" id="upload" accept="image/svg+xml,.svg">
+  <br><br>
+  Thickness
+  <input type="range" id="depth" min="2" max="100" value="20">
+  <br>
+  Pitch
+  <input type="range" id="pitch" min="-180" max="180" value="0">
+  <br>
+  Yaw
+  <input type="range" id="yaw" min="-180" max="180" value="0">
+  <br>
+  Outline Depth
+  <input type="range" id="outlineDepth" min="1" max="50" value="5">
+  <br>
+  Outline Scale %
+  <input type="range" id="outlineScale" min="101" max="120" value="105">
+  <br>
+  Override Path:
+  <select id="pathSelect"><option value="">--Choose Path--</option></select>
+  <select id="overrideColor">
+    <option value="#FFD700">Gold</option>
+    <option value="#C0C0C0">Silver</option>
+    <option value="#00FFFF">Cyan</option>
+  </select>
+  <button id="applyOverride">Apply Override</button>
+  <button id="toggleWireframe">Toggle Wireframe</button>
+  <br>
+  <input type="text" id="presetName" placeholder="Preset Name">
+  <button id="savePreset">Save Preset</button>
+  <select id="loadPreset"><option value="">--Load Preset--</option></select>
+  <br>
+  <button id="export">Export PNG</button>
+  <div id="log"></div>
+</div>
+
 <script type="module">
 import * as THREE from "https://esm.sh/three@0.152.2?bundle";
 import { SVGLoader } from "https://esm.sh/three@0.152.2/examples/jsm/loaders/SVGLoader.js?bundle";
@@ -36,7 +92,7 @@ controls.enableZoom = true;
 
 /* Variables */
 let meshGroup = null;
-let outlineGroup = null;
+let outlineMesh = null;
 let pathsData = null;
 let wireframe = false;
 const pathOverrides = new Map();
@@ -58,14 +114,14 @@ loadPresetsFromStorage();
 function buildMesh(){
   if(!pathsData) return;
   if(meshGroup) scene.remove(meshGroup);
-  if(outlineGroup) scene.remove(outlineGroup);
+  if(outlineMesh) scene.remove(outlineMesh);
 
   const depth = parseFloat(document.getElementById("depth").value);
   const outlineDepth = parseFloat(document.getElementById("outlineDepth").value);
   const outlineScale = parseFloat(document.getElementById("outlineScale").value)/100;
 
   meshGroup = new THREE.Group();
-  outlineGroup = new THREE.Group();
+  outlineMesh = new THREE.Group();
 
   // Main logo meshes
   pathsData.forEach((path,i)=>{
@@ -83,63 +139,50 @@ function buildMesh(){
     });
   });
 
-  // Outline: duplicate logo meshes, scale slightly, silver metallic
+  // Outline: merge all paths as one combined group
+  let mergedShapes = [];
   pathsData.forEach(path=>{
-    const shapes = path.toShapes(true);
-    shapes.forEach(shape=>{
-      const outlineShape = shape.clone();
-      // Apply outlineScale relative to main mesh (before extrusion)
-      outlineShape.scale(outlineScale, outlineScale);
+    mergedShapes.push(...path.toShapes(true));
+  });
 
-      const geometry = new THREE.ExtrudeGeometry(outlineShape, {
-        depth: outlineDepth,
-        bevelEnabled: false
-      });
-      const material = new THREE.MeshStandardMaterial({
-        color: 0xC0C0C0,
-        metalness:1,
-        roughness:0.2,
-        wireframe: wireframe
-      });
-      const mesh = new THREE.Mesh(geometry,material);
-
-      // Offset slightly behind main mesh
-      mesh.position.z = -outlineDepth/2;
-      outlineGroup.add(mesh);
+  // For outline, slightly scale shapes
+  mergedShapes.forEach(shape=>{
+    shape.scale(outlineScale, outlineScale);
+    const geometry = new THREE.ExtrudeGeometry(shape,{depth:outlineDepth, bevelEnabled:false});
+    const material = new THREE.MeshStandardMaterial({
+      color: new THREE.Color("#C0C0C0"), // always silver
+      metalness:1,
+      roughness:0.2,
+      wireframe: wireframe
     });
+    const mesh = new THREE.Mesh(geometry,material);
+    mesh.position.z = -outlineDepth; // sit behind
+    outlineMesh.add(mesh);
   });
 
   // Flip vertically
   meshGroup.scale.y = -1;
-  outlineGroup.scale.y = -1;
+  outlineMesh.scale.y = -1;
 
-  // --- Centering using combined bounding box
-  const combined = new THREE.Group();
-  combined.add(meshGroup);
-  combined.add(outlineGroup);
-
-  // Compute bounding box and scale to fit viewport
-  const box = new THREE.Box3().setFromObject(combined);
+  // Center & scale
+  const box = new THREE.Box3().setFromObject(meshGroup);
   const size = box.getSize(new THREE.Vector3()).length();
-  const scaleFactor = 300 / size;
-
-  meshGroup.scale.multiplyScalar(scaleFactor);
-  outlineGroup.scale.multiplyScalar(scaleFactor);
-
-  // Recompute bounding box after scaling to center
-  const center = new THREE.Box3().setFromObject(combined).getCenter(new THREE.Vector3());
-  meshGroup.position.sub(center);
-  outlineGroup.position.sub(center);
+  const scale = 300 / size;
+  meshGroup.scale.multiplyScalar(scale);
+  outlineMesh.scale.multiplyScalar(scale);
+  const center = box.getCenter(new THREE.Vector3());
+  meshGroup.position.sub(center.multiplyScalar(scale));
+  outlineMesh.position.sub(center.multiplyScalar(scale));
 
   // Apply pitch/yaw
   const pitch = parseFloat(document.getElementById("pitch").value) * Math.PI/180;
   const yaw = parseFloat(document.getElementById("yaw").value) * Math.PI/180;
   meshGroup.rotation.x = pitch;
   meshGroup.rotation.y = yaw;
-  outlineGroup.rotation.x = pitch;
-  outlineGroup.rotation.y = yaw;
+  outlineMesh.rotation.x = pitch;
+  outlineMesh.rotation.y = yaw;
 
-  scene.add(outlineGroup);
+  scene.add(outlineMesh);
   scene.add(meshGroup);
 
   log(`3D SVG mesh built: ${pathsData.length} paths, depth ${depth}, outline ${outlineDepth}`);
@@ -204,7 +247,7 @@ document.getElementById("applyOverride").onclick = ()=>{
 document.getElementById("toggleWireframe").onclick = ()=>{
   wireframe = !wireframe;
   if(meshGroup) meshGroup.children.forEach(c=>c.material.wireframe = wireframe);
-  if(outlineGroup) outlineGroup.children.forEach(c=>c.material.wireframe = wireframe);
+  if(outlineMesh) outlineMesh.children.forEach(c=>c.material.wireframe = wireframe);
 };
 
 /* Presets */
@@ -259,3 +302,5 @@ window.addEventListener("resize", ()=>{
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 </script>
+</body>
+</html>
