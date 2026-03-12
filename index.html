@@ -90,18 +90,17 @@ function buildMesh(){
 
   pathsData.forEach(path => {
     let pathColor = path.userData.style.fill;
-    if(!pathColor || pathColor === "none") return; // skip empty fill
+    if(!pathColor || pathColor === "none") return;
     const shapes = path.toShapes(true);
 
     shapes.forEach(shape => {
       const geometry = new THREE.ExtrudeGeometry(shape, {depth: depth, bevelEnabled:false});
       const originalColor = new THREE.Color(pathColor);
-      // Mix original path color with selected tint (50%)
-      const finalColor = originalColor.clone().lerp(tintColor, 0.5);
+      const finalColor = originalColor.clone().lerp(tintColor, 0.5); // blend with selected tint
       const material = new THREE.MeshStandardMaterial({
         color: finalColor,
-        metalness:0.8,
-        roughness:0.2,
+        metalness: 0.8,
+        roughness: 0.2,
         wireframe: wireframe
       });
       const mesh = new THREE.Mesh(geometry, material);
@@ -109,7 +108,7 @@ function buildMesh(){
     });
   });
 
-  // Flip whole group vertically to match SVG
+  // Flip whole group vertically
   meshGroup.scale.y = -1;
 
   // Center and auto-scale
