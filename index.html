@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>SVG 3D Logo Tool – Metallic Outline</title>
+<title>SVG 3D Logo Tool – Outline Scale</title>
 <style>
 body{margin:0;background:#111;color:white;font-family:Arial;overflow:hidden;}
 #ui{
@@ -92,7 +92,7 @@ controls.enableZoom = true;
 
 /* Variables */
 let meshGroup = null;
-let outlineMesh = null;
+let outlineGroup = null;
 let pathsData = null;
 let wireframe = false;
 const pathOverrides = new Map();
@@ -114,14 +114,14 @@ loadPresetsFromStorage();
 function buildMesh(){
   if(!pathsData) return;
   if(meshGroup) scene.remove(meshGroup);
-  if(outlineMesh) scene.remove(outlineMesh);
+  if(outlineGroup) scene.remove(outlineGroup);
 
   const depth = parseFloat(document.getElementById("depth").value);
   const outlineDepth = parseFloat(document.getElementById("outlineDepth").value);
   const outlineScale = parseFloat(document.getElementById("outlineScale").value)/100;
 
   meshGroup = new THREE.Group();
-  outlineMesh = new THREE.Group();
+  outlineGroup = new THREE.Group();
 
   // Main logo meshes
   pathsData.forEach((path,i)=>{
@@ -139,50 +139,49 @@ function buildMesh(){
     });
   });
 
-  // Outline: merge all paths as one combined group
-  let mergedShapes = [];
+  // Outline: duplicate logo meshes, scale slightly, silver metallic
   pathsData.forEach(path=>{
-    mergedShapes.push(...path.toShapes(true));
-  });
-
-  // For outline, slightly scale shapes
-  mergedShapes.forEach(shape=>{
-    shape.scale(outlineScale, outlineScale);
-    const geometry = new THREE.ExtrudeGeometry(shape,{depth:outlineDepth, bevelEnabled:false});
-    const material = new THREE.MeshStandardMaterial({
-      color: new THREE.Color("#C0C0C0"), // always silver
-      metalness:1,
-      roughness:0.2,
-      wireframe: wireframe
+    const shapes = path.toShapes(true);
+    shapes.forEach(shape=>{
+      // clone shape
+      const outlineShape = shape.clone();
+      outlineShape.scale(outlineScale, outlineScale);
+      const geometry = new THREE.ExtrudeGeometry(outlineShape,{depth:outlineDepth, bevelEnabled:false});
+      const material = new THREE.MeshStandardMaterial({
+        color: new THREE.Color("#C0C0C0"),
+        metalness:1,
+        roughness:0.2,
+        wireframe: wireframe
+      });
+      const mesh = new THREE.Mesh(geometry,material);
+      mesh.position.z = -outlineDepth; // behind logo
+      outlineGroup.add(mesh);
     });
-    const mesh = new THREE.Mesh(geometry,material);
-    mesh.position.z = -outlineDepth; // sit behind
-    outlineMesh.add(mesh);
   });
 
   // Flip vertically
   meshGroup.scale.y = -1;
-  outlineMesh.scale.y = -1;
+  outlineGroup.scale.y = -1;
 
   // Center & scale
   const box = new THREE.Box3().setFromObject(meshGroup);
   const size = box.getSize(new THREE.Vector3()).length();
   const scale = 300 / size;
   meshGroup.scale.multiplyScalar(scale);
-  outlineMesh.scale.multiplyScalar(scale);
+  outlineGroup.scale.multiplyScalar(scale);
   const center = box.getCenter(new THREE.Vector3());
   meshGroup.position.sub(center.multiplyScalar(scale));
-  outlineMesh.position.sub(center.multiplyScalar(scale));
+  outlineGroup.position.sub(center.multiplyScalar(scale));
 
   // Apply pitch/yaw
   const pitch = parseFloat(document.getElementById("pitch").value) * Math.PI/180;
   const yaw = parseFloat(document.getElementById("yaw").value) * Math.PI/180;
   meshGroup.rotation.x = pitch;
   meshGroup.rotation.y = yaw;
-  outlineMesh.rotation.x = pitch;
-  outlineMesh.rotation.y = yaw;
+  outlineGroup.rotation.x = pitch;
+  outlineGroup.rotation.y = yaw;
 
-  scene.add(outlineMesh);
+  scene.add(outlineGroup);
   scene.add(meshGroup);
 
   log(`3D SVG mesh built: ${pathsData.length} paths, depth ${depth}, outline ${outlineDepth}`);
@@ -247,7 +246,7 @@ document.getElementById("applyOverride").onclick = ()=>{
 document.getElementById("toggleWireframe").onclick = ()=>{
   wireframe = !wireframe;
   if(meshGroup) meshGroup.children.forEach(c=>c.material.wireframe = wireframe);
-  if(outlineMesh) outlineMesh.children.forEach(c=>c.material.wireframe = wireframe);
+  if(outlineGroup) outlineGroup.children.forEach(c=>c.material.wireframe = wireframe);
 };
 
 /* Presets */
