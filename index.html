@@ -36,17 +36,17 @@ import * as THREE from "https://esm.sh/three@0.152.2?bundle";
 import { SVGLoader } from "https://esm.sh/three@0.152.2/examples/jsm/loaders/SVGLoader.js?bundle";
 import { OrbitControls } from "https://esm.sh/three@0.152.2/examples/jsm/controls/OrbitControls.js?bundle";
 
-/* LOGGING */
+/* Logging */
 function log(msg){
-  const el=document.getElementById("log");
-  const time=new Date().toLocaleTimeString();
-  el.innerHTML+="["+time+"] "+msg+"<br>";
-  el.scrollTop=el.scrollHeight;
+  const el = document.getElementById("log");
+  const time = new Date().toLocaleTimeString();
+  el.innerHTML += `[${time}] ${msg}<br>`;
+  el.scrollTop = el.scrollHeight;
   console.log(msg);
 }
 log("App started");
 
-/* THREE SETUP */
+/* Three.js setup */
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 2000);
 camera.position.set(0,0,400);
@@ -55,57 +55,60 @@ const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true, preserveDr
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-/* LIGHTS */
+/* Lights */
 scene.add(new THREE.AmbientLight(0xffffff,1.2));
 const dirLight = new THREE.DirectionalLight(0xffffff,1);
 dirLight.position.set(200,200,300);
 scene.add(dirLight);
 
-/* CONTROLS */
+/* Controls */
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping=true;
-controls.dampingFactor=0.05;
-controls.enableZoom=true;
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.enableZoom = true;
 
-/* VARIABLES */
+/* Variables */
 let meshGroup = null;
-let wireframe=false;
+let pathsData = null; // keep for rebuilding on depth change
+let wireframe = false;
 
-/* BUILD MESH FROM SVG */
-function buildMesh(paths){
+/* Build mesh from paths */
+function buildMesh(){
+  if(!pathsData) return;
   if(meshGroup) scene.remove(meshGroup);
 
-  meshGroup = new THREE.Group();
   const depth = parseFloat(document.getElementById("depth").value);
+  meshGroup = new THREE.Group();
 
-  paths.forEach(path => {
+  pathsData.forEach(path => {
     const pathColor = path.userData.style.fill || '#ffffff';
     const shapes = path.toShapes(true);
 
     shapes.forEach(shape => {
-      const geometry = new THREE.ExtrudeGeometry(shape, { depth: depth, bevelEnabled:false });
-      const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(pathColor), metalness:0.2, roughness:0.6, wireframe:wireframe });
-      const pathMesh = new THREE.Mesh(geometry, material);
-      meshGroup.add(pathMesh);
+      // Flip vertically: multiply Y coords by -1
+      shape.applyMatrix4(new THREE.Matrix4().makeScale(1, -1, 1));
+
+      const geometry = new THREE.ExtrudeGeometry(shape, {depth:depth, bevelEnabled:false});
+      const material = new THREE.MeshStandardMaterial({color:new THREE.Color(pathColor), metalness:0.2, roughness:0.6, wireframe:wireframe});
+      const mesh = new THREE.Mesh(geometry, material);
+      meshGroup.add(mesh);
     });
   });
 
-  // Flip vertically to match SVG coordinate system
-  meshGroup.scale.set(1, -1, 1);
-
-  // Auto-center and scale
+  // Center and scale
   const box = new THREE.Box3().setFromObject(meshGroup);
   const size = box.getSize(new THREE.Vector3()).length();
   const scale = 300 / size;
   meshGroup.scale.multiplyScalar(scale);
+
   const center = box.getCenter(new THREE.Vector3());
   meshGroup.position.sub(center.multiplyScalar(scale));
 
   scene.add(meshGroup);
-  log("3D SVG mesh built: "+paths.length+" paths, depth "+depth);
+  log(`3D SVG mesh built: ${pathsData.length} paths, depth ${depth}`);
 }
 
-/* SVG UPLOAD */
+/* Load SVG */
 function loadSVG(file){
   if(!file) return;
   const reader = new FileReader();
@@ -119,48 +122,39 @@ function loadSVG(file){
       return;
     }
 
-    buildMesh(data.paths);
+    pathsData = data.paths; // save for depth changes
+    buildMesh();
   };
   reader.readAsText(file);
 }
 
-/* INPUT HANDLERS */
+/* Input handlers */
 document.getElementById("upload").addEventListener("change", e=>{
   const file = e.target.files[0];
   if(!file){ log("No file selected!"); return; }
-  log("Uploaded: "+file.name+" ("+file.type+")");
+  log(`Uploaded: ${file.name} (${file.type})`);
   loadSVG(file);
 });
 
-document.getElementById("depth").oninput = ()=>{
-  if(meshGroup){
-    // rebuild using previous paths
-    const paths = [];
-    meshGroup.children.forEach(child => {
-      if(child.geometry && child.geometry.parameters && child.material){
-        // cannot perfectly recover paths, so rebuild SVG needed on slider change
-        // easiest: just reload SVG file
-        log("Change depth: reload SVG for correct extrusion");
-      }
-    });
-  }
-};
+document.getElementById("depth").addEventListener("input", ()=>{
+  buildMesh(); // rebuild mesh with new depth
+});
 
 document.getElementById("toggleWireframe").onclick = ()=>{
   wireframe = !wireframe;
   if(meshGroup){
-    meshGroup.children.forEach(child => child.material.wireframe = wireframe);
+    meshGroup.children.forEach(child=>child.material.wireframe = wireframe);
   }
 };
 
 document.getElementById("export").onclick = ()=>{
   const link = document.createElement("a");
-  link.download="logo.png";
+  link.download = "logo.png";
   link.href = renderer.domElement.toDataURL();
   link.click();
 };
 
-/* RENDER LOOP */
+/* Render loop */
 function animate(){
   requestAnimationFrame(animate);
   controls.update();
@@ -168,12 +162,13 @@ function animate(){
 }
 animate();
 
-/* RESIZE */
+/* Resize */
 window.addEventListener("resize", ()=>{
-  camera.aspect=window.innerWidth/window.innerHeight;
+  camera.aspect = window.innerWidth/window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 </script>
+
 </body>
 </html>
