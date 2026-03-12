@@ -91,7 +91,10 @@ function buildMesh(){
       // Apply outlineScale relative to main mesh (before extrusion)
       outlineShape.scale(outlineScale, outlineScale);
 
-      const geometry = new THREE.ExtrudeGeometry(outlineShape,{depth:outlineDepth, bevelEnabled:false});
+      const geometry = new THREE.ExtrudeGeometry(outlineShape, {
+        depth: outlineDepth,
+        bevelEnabled: false
+      });
       const material = new THREE.MeshStandardMaterial({
         color: 0xC0C0C0,
         metalness:1,
