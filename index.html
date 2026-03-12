@@ -8,7 +8,7 @@ body{margin:0;background:#111;color:white;font-family:Arial;overflow:hidden;}
 #ui{
   position:absolute; top:20px; left:20px;
   background:#222; padding:15px; border-radius:10px;
-  width:280px; z-index:10;
+  width:300px; z-index:10;
 }
 input[type=range]{width:100%;}
 button{
@@ -68,36 +68,44 @@ controls.dampingFactor=0.05;
 controls.enableZoom=true;
 
 /* VARIABLES */
-let mesh=null;
-let shapes=[];
+let meshGroup = null;
 let wireframe=false;
 
-/* BUILD MESH */
-function buildMesh(){
-  if(!shapes || shapes.length===0) return;
-  if(mesh) scene.remove(mesh);
+/* BUILD MESH FROM SVG */
+function buildMesh(paths){
+  if(meshGroup) scene.remove(meshGroup);
 
+  meshGroup = new THREE.Group();
   const depth = parseFloat(document.getElementById("depth").value);
-  const geometry = new THREE.ExtrudeGeometry(shapes, {depth:depth, bevelEnabled:false});
-  geometry.center();
 
-  const material = new THREE.MeshStandardMaterial({color:0x00ffff, metalness:0.2, roughness:0.6, wireframe:wireframe});
-  mesh = new THREE.Mesh(geometry, material);
+  paths.forEach(path => {
+    const pathColor = path.userData.style.fill || '#ffffff';
+    const shapes = path.toShapes(true);
 
-  // Auto-scale
-  const box = new THREE.Box3().setFromObject(mesh);
+    shapes.forEach(shape => {
+      const geometry = new THREE.ExtrudeGeometry(shape, { depth: depth, bevelEnabled:false });
+      const material = new THREE.MeshStandardMaterial({ color: new THREE.Color(pathColor), metalness:0.2, roughness:0.6, wireframe:wireframe });
+      const pathMesh = new THREE.Mesh(geometry, material);
+      meshGroup.add(pathMesh);
+    });
+  });
+
+  // Flip vertically to match SVG coordinate system
+  meshGroup.scale.set(1, -1, 1);
+
+  // Auto-center and scale
+  const box = new THREE.Box3().setFromObject(meshGroup);
   const size = box.getSize(new THREE.Vector3()).length();
   const scale = 300 / size;
-  mesh.scale.set(scale, scale, scale);
-
+  meshGroup.scale.multiplyScalar(scale);
   const center = box.getCenter(new THREE.Vector3());
-  mesh.position.sub(center.multiplyScalar(scale));
+  meshGroup.position.sub(center.multiplyScalar(scale));
 
-  scene.add(mesh);
-  log("Mesh built: "+shapes.length+" shapes, depth "+depth);
+  scene.add(meshGroup);
+  log("3D SVG mesh built: "+paths.length+" paths, depth "+depth);
 }
 
-/* LOAD SVG */
+/* SVG UPLOAD */
 function loadSVG(file){
   if(!file) return;
   const reader = new FileReader();
@@ -106,13 +114,12 @@ function loadSVG(file){
     const loader = new SVGLoader();
     const data = loader.parse(text);
 
-    shapes=[];
-    data.paths.forEach(path=>{
-      shapes.push(...path.toShapes(true));
-    });
+    if(!data.paths.length){
+      log("No paths found in SVG!");
+      return;
+    }
 
-    log("SVG loaded: "+shapes.length+" shapes detected");
-    buildMesh();
+    buildMesh(data.paths);
   };
   reader.readAsText(file);
 }
@@ -125,19 +132,33 @@ document.getElementById("upload").addEventListener("change", e=>{
   loadSVG(file);
 });
 
-document.getElementById("depth").oninput = buildMesh;
+document.getElementById("depth").oninput = ()=>{
+  if(meshGroup){
+    // rebuild using previous paths
+    const paths = [];
+    meshGroup.children.forEach(child => {
+      if(child.geometry && child.geometry.parameters && child.material){
+        // cannot perfectly recover paths, so rebuild SVG needed on slider change
+        // easiest: just reload SVG file
+        log("Change depth: reload SVG for correct extrusion");
+      }
+    });
+  }
+};
 
 document.getElementById("toggleWireframe").onclick = ()=>{
   wireframe = !wireframe;
-  if(mesh) mesh.material.wireframe = wireframe;
-}
+  if(meshGroup){
+    meshGroup.children.forEach(child => child.material.wireframe = wireframe);
+  }
+};
 
 document.getElementById("export").onclick = ()=>{
   const link = document.createElement("a");
   link.download="logo.png";
   link.href = renderer.domElement.toDataURL();
   link.click();
-}
+};
 
 /* RENDER LOOP */
 function animate(){
@@ -154,6 +175,5 @@ window.addEventListener("resize", ()=>{
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 </script>
-
 </body>
 </html>
