@@ -5,70 +5,59 @@
 <title>Logo 3D Tool</title>
 
 <style>
-
 body{
-margin:0;
-background:#111;
-color:white;
-font-family:Arial;
-overflow:hidden;
+  margin:0;
+  background:#111;
+  color:white;
+  font-family:Arial;
+  overflow:hidden;
 }
 
 #ui{
-position:absolute;
-top:20px;
-left:20px;
-background:#222;
-padding:15px;
-border-radius:10px;
-width:260px;
-z-index:10;
+  position:absolute;
+  top:20px;
+  left:20px;
+  background:#222;
+  padding:15px;
+  border-radius:10px;
+  width:260px;
+  z-index:10;
 }
 
 #log{
-margin-top:10px;
-font-size:12px;
-background:#000;
-padding:8px;
-height:120px;
-overflow:auto;
-border-radius:6px;
+  margin-top:10px;
+  font-size:12px;
+  background:#000;
+  padding:8px;
+  height:120px;
+  overflow:auto;
+  border-radius:6px;
 }
 
-input[type=range]{
-width:100%;
-}
+input[type=range]{ width:100%; }
 
 button{
-margin-top:10px;
-width:100%;
-padding:6px;
-background:#3a7cff;
-border:none;
-color:white;
-border-radius:5px;
-cursor:pointer;
+  margin-top:10px;
+  width:100%;
+  padding:6px;
+  background:#3a7cff;
+  border:none;
+  color:white;
+  border-radius:5px;
+  cursor:pointer;
 }
-
 </style>
-
 </head>
 
 <body>
 
 <div id="ui">
-
-<input type="file" id="upload" accept="image/png">
-
-<br><br>
-
-Thickness
-<input type="range" id="depth" min="2" max="40" value="10">
-
-<button id="export">Export PNG</button>
-
-<div id="log"></div>
-
+  <input type="file" id="upload" accept="image/png">
+  <br><br>
+  Thickness
+  <input type="range" id="depth" min="2" max="40" value="10">
+  <button id="export">Export PNG</button>
+  <div id="log"></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/imagetracerjs@1.2.6/imagetracer_v1.2.6.min.js"></script>
@@ -78,8 +67,7 @@ Thickness
 import * as THREE from "https://esm.sh/three@0.152.2?bundle";
 import { SVGLoader } from "https://esm.sh/three@0.152.2/examples/jsm/loaders/SVGLoader.js?bundle";
 
-/* ---------------- LOGGING ---------------- */
-
+/* -------- LOGGING -------- */
 function log(msg){
   const el=document.getElementById("log")
   const time=new Date().toLocaleTimeString()
@@ -87,227 +75,179 @@ function log(msg){
   el.scrollTop=el.scrollHeight
   console.log(msg)
 }
-
 log("App started")
 
-/* ---------------- THREE.JS SETUP ---------------- */
-
-let scene=new THREE.Scene()
-
-let camera=new THREE.PerspectiveCamera(
-  45,
-  window.innerWidth/window.innerHeight,
-  0.1,
-  2000
-)
-
+/* -------- THREE.JS SETUP -------- */
+let scene = new THREE.Scene()
+let camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 2000)
 camera.position.set(0,0,300)
-
-let renderer=new THREE.WebGLRenderer({
-  antialias:true,
-  alpha:true,
-  preserveDrawingBuffer:true
-})
-
-renderer.setSize(window.innerWidth,window.innerHeight)
+let renderer = new THREE.WebGLRenderer({antialias:true, alpha:true, preserveDrawingBuffer:true})
+renderer.setSize(window.innerWidth, window.innerHeight)
 document.body.appendChild(renderer.domElement)
 
-/* ---------------- LIGHTING ---------------- */
-
-let ambient=new THREE.AmbientLight(0xffffff,1.4)
+/* -------- LIGHTING -------- */
+let ambient = new THREE.AmbientLight(0xffffff, 1.4)
 scene.add(ambient)
-
-let light=new THREE.DirectionalLight(0xffffff,1)
+let light = new THREE.DirectionalLight(0xffffff,1)
 light.position.set(200,200,300)
 scene.add(light)
 
-/* ---------------- VARIABLES ---------------- */
+/* -------- VARIABLES -------- */
+let mesh, shapes
+let dragging=false, lastX=0, lastY=0
 
-let mesh
-let shapes
-let dragging=false
-let lastX=0
-let lastY=0
-
-/* ---------------- BUILD MESH ---------------- */
-
+/* -------- BUILD MESH -------- */
 function buildMesh(){
   if(!shapes) return
-
   try{
     if(mesh) scene.remove(mesh)
 
-    let depth=document.getElementById("depth").value
+    let depth = document.getElementById("depth").value
     log("Building 3D mesh")
 
-    let geometry=new THREE.ExtrudeGeometry(shapes,{
-      depth:depth,
-      bevelEnabled:false
-    })
-
+    let geometry = new THREE.ExtrudeGeometry(shapes, {depth:depth, bevelEnabled:false})
     geometry.center()
 
-    let material=new THREE.MeshStandardMaterial({
-      color:0xffffff,
-      metalness:0.2,
-      roughness:0.6
-    })
+    let material = new THREE.MeshStandardMaterial({color:0xffffff, metalness:0.2, roughness:0.6})
+    mesh = new THREE.Mesh(geometry, material)
 
-    mesh=new THREE.Mesh(geometry,material)
-
-    // Auto scale to screen
-    const box=new THREE.Box3().setFromObject(mesh)
-    const size=box.getSize(new THREE.Vector3()).length()
-    const scale=200/size
+    // Auto-scale to screen
+    const box = new THREE.Box3().setFromObject(mesh)
+    const size = box.getSize(new THREE.Vector3()).length()
+    const scale = 200 / size
     mesh.scale.set(scale,-scale,scale)
 
     // Center mesh
-    const center=box.getCenter(new THREE.Vector3())
+    const center = box.getCenter(new THREE.Vector3())
     mesh.position.sub(center)
 
     scene.add(mesh)
     log("Mesh complete")
-
-  }catch(err){
+  } catch(err){
     log("Mesh error: "+err)
   }
 }
 
-/* ---------------- PARSE SVG ---------------- */
-
+/* -------- PARSE SVG -------- */
 function parseSVG(svg){
   try{
     log("Parsing SVG")
-    let loader=new SVGLoader()
-    let data=loader.parse(svg)
-    shapes=[]
+    let loader = new SVGLoader()
+    let data = loader.parse(svg)
+    shapes = []
 
     data.paths.forEach(path=>{
-      let newShapes=path.toShapes(true)
+      let newShapes = path.toShapes(true)
       newShapes.forEach(shape=>{
-        // ignore tiny artifacts
-        const geo=new THREE.ShapeGeometry(shape)
+        // filter tiny artifacts
+        const geo = new THREE.ShapeGeometry(shape)
         geo.computeBoundingBox()
-        const box=geo.boundingBox
-        const size=(box.max.x-box.min.x)*(box.max.y-box.min.y)
-        if(size>50){ shapes.push(shape) }
+        const box = geo.boundingBox
+        const size = (box.max.x-box.min.x)*(box.max.y-box.min.y)
+        if(size>50) shapes.push(shape)
       })
     })
 
     log("Shapes detected: "+shapes.length)
     buildMesh()
-  }catch(err){
+  } catch(err){
     log("SVG parse error: "+err)
   }
 }
 
-/* ---------------- PNG TO SILHOUETTE ---------------- */
-
+/* -------- CONVERT PNG TO SILHOUETTE -------- */
 function convertPNG(url){
   log("Loading PNG")
-
-  let img=new Image()
+  const img = new Image()
   img.crossOrigin="anonymous"
 
   img.onload=function(){
     log("Image loaded")
-
-    let canvas=document.createElement("canvas")
-    canvas.width=img.width
-    canvas.height=img.height
-
-    let ctx=canvas.getContext("2d")
+    const canvas = document.createElement("canvas")
+    canvas.width = img.width
+    canvas.height = img.height
+    const ctx = canvas.getContext("2d")
     ctx.drawImage(img,0,0)
 
-    let imgData=ctx.getImageData(0,0,canvas.width,canvas.height)
-    let d=imgData.data
+    const imgData = ctx.getImageData(0,0,canvas.width,canvas.height)
+    const d = imgData.data
 
     // Convert to black silhouette
     for(let i=0;i<d.length;i+=4){
-      let r=d[i], g=d[i+1], b=d[i+2]
-      let brightness=(r+g+b)/3
-      if(brightness>220){ d[i+3]=0 }       // transparent background
+      const r=d[i], g=d[i+1], b=d[i+2]
+      const brightness = (r+g+b)/3
+      if(brightness>220){ d[i+3]=0 } // transparent background
       else{ d[i]=0; d[i+1]=0; d[i+2]=0; d[i+3]=255 } // black logo
     }
 
     ctx.putImageData(imgData,0,0)
 
-    log("Tracing silhouette")
-    let svg=ImageTracer.imagedataToSVG(imgData,{
-      ltres:0.5,
-      qtres:0.5,
-      numberofcolors:2,
-      pathomit:4
-    })
+    log("Tracing logo to SVG")
+    const svg = ImageTracer.imagedataToSVG(
+      ctx.getImageData(0,0,canvas.width,canvas.height),
+      {ltres:0.5, qtres:0.5, numberofcolors:2, pathomit:4}
+    )
 
     parseSVG(svg)
   }
 
-  img.src=url
+  img.src = url
 }
 
-/* ---------------- FILE UPLOAD ---------------- */
-
+/* -------- FILE UPLOAD -------- */
 document.getElementById("upload").addEventListener("change",function(e){
-  let file=e.target.files[0]
+  const file = e.target.files[0]
   if(!file) return
   log("Uploaded: "+file.name)
-  let url=URL.createObjectURL(file)
+  const url = URL.createObjectURL(file)
   convertPNG(url)
 })
 
-/* ---------------- DEPTH SLIDER ---------------- */
+/* -------- DEPTH SLIDER -------- */
+document.getElementById("depth").oninput = buildMesh
 
-document.getElementById("depth").oninput=buildMesh
-
-/* ---------------- ROTATION ---------------- */
-
-renderer.domElement.addEventListener("mousedown",e=>{
+/* -------- ROTATION -------- */
+renderer.domElement.addEventListener("mousedown", e=>{
   dragging=true
   lastX=e.clientX
   lastY=e.clientY
 })
 
-window.addEventListener("mouseup",()=>dragging=false)
+window.addEventListener("mouseup", ()=>dragging=false)
 
-window.addEventListener("mousemove",e=>{
+window.addEventListener("mousemove", e=>{
   if(!dragging || !mesh) return
-  let dx=e.clientX-lastX
-  let dy=e.clientY-lastY
-  mesh.rotation.y+=dx*0.01
-  mesh.rotation.x+=dy*0.01
-  lastX=e.clientX
-  lastY=e.clientY
+  const dx=e.clientX-lastX
+  const dy=e.clientY-lastY
+  mesh.rotation.y += dx*0.01
+  mesh.rotation.x += dy*0.01
+  lastX = e.clientX
+  lastY = e.clientY
 })
 
-/* ---------------- EXPORT ---------------- */
-
+/* -------- EXPORT -------- */
 document.getElementById("export").onclick=function(){
   log("Exporting PNG")
-  let link=document.createElement("a")
+  const link=document.createElement("a")
   link.download="logo.png"
-  link.href=renderer.domElement.toDataURL()
+  link.href = renderer.domElement.toDataURL()
   link.click()
 }
 
-/* ---------------- RENDER LOOP ---------------- */
-
+/* -------- RENDER LOOP -------- */
 function animate(){
   requestAnimationFrame(animate)
-  renderer.render(scene,camera)
+  renderer.render(scene, camera)
 }
-
 animate()
 
-/* ---------------- RESIZE ---------------- */
-
-window.addEventListener("resize",function(){
-  camera.aspect=window.innerWidth/window.innerHeight
+/* -------- RESIZE -------- */
+window.addEventListener("resize", function(){
+  camera.aspect = window.innerWidth/window.innerHeight
   camera.updateProjectionMatrix()
-  renderer.setSize(window.innerWidth,window.innerHeight)
+  renderer.setSize(window.innerWidth, window.innerHeight)
 })
 
 </script>
-
 </body>
 </html>
