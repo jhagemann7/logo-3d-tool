@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Logo 3D Tool - SVG Only</title>
+<title>Logo 3D Tool - SVG Upload</title>
 
 <style>
 body{
@@ -12,7 +12,6 @@ body{
   font-family:Arial;
   overflow:hidden;
 }
-
 #ui{
   position:absolute;
   top:20px;
@@ -20,10 +19,9 @@ body{
   background:#222;
   padding:15px;
   border-radius:10px;
-  width:260px;
+  width:280px;
   z-index:10;
 }
-
 #log{
   margin-top:10px;
   font-size:12px;
@@ -33,20 +31,9 @@ body{
   overflow:auto;
   border-radius:6px;
 }
-
 input[type=range]{ width:100%; }
-
-button{
-  margin-top:10px;
-  width:100%;
-  padding:6px;
-  background:#3a7cff;
-  border:none;
-  color:white;
-  border-radius:5px;
-  cursor:pointer;
-  margin-top:5px;
-}
+button{ margin-top:5px; width:100%; padding:6px; background:#3a7cff; border:none; color:white; border-radius:5px; cursor:pointer;}
+#svgPreview{ margin-top:10px; width:100%; border:1px solid #666; background:#222;}
 </style>
 </head>
 
@@ -60,6 +47,7 @@ button{
   <button id="toggleWireframe">Toggle Wireframe</button>
   <button id="export">Export PNG</button>
   <div id="log"></div>
+  <div id="svgPreview"></div>
 </div>
 
 <script type="module">
@@ -86,46 +74,39 @@ let renderer = new THREE.WebGLRenderer({antialias:true, alpha:true, preserveDraw
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-/* -------- LIGHTING -------- */
-let ambient = new THREE.AmbientLight(0xffffff, 1.2);
-scene.add(ambient);
-let directional = new THREE.DirectionalLight(0xffffff,1);
+/* -------- LIGHTS -------- */
+scene.add(new THREE.AmbientLight(0xffffff,1.2));
+const directional = new THREE.DirectionalLight(0xffffff,1);
 directional.position.set(200,200,300);
 scene.add(directional);
 
 /* -------- CONTROLS -------- */
-let controls = new OrbitControls(camera, renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.05;
 controls.enableZoom = true;
 
 /* -------- VARIABLES -------- */
-let mesh, shapes = [];
+let mesh = null;
+let shapes = [];
 let wireframe=false;
 
-/* -------- BUILD MESH -------- */
+/* -------- BUILD 3D MESH -------- */
 function buildMesh(){
   if(!shapes || shapes.length===0) return;
   if(mesh) scene.remove(mesh);
 
   const depth = parseFloat(document.getElementById("depth").value);
-
   const geometry = new THREE.ExtrudeGeometry(shapes, {depth:depth, bevelEnabled:false});
   geometry.center();
 
-  const material = new THREE.MeshStandardMaterial({
-    color:0xffffff,
-    metalness:0.2,
-    roughness:0.6,
-    wireframe: wireframe
-  });
-
+  const material = new THREE.MeshStandardMaterial({color:0xffffff, metalness:0.2, roughness:0.6, wireframe:wireframe});
   mesh = new THREE.Mesh(geometry, material);
 
-  // Auto-scale mesh to fit view
+  // Auto-scale
   const box = new THREE.Box3().setFromObject(mesh);
   const size = box.getSize(new THREE.Vector3()).length();
-  const scale = 300 / size; // adjust scaling
+  const scale = 300 / size;
   mesh.scale.set(scale, scale, scale);
 
   const center = box.getCenter(new THREE.Vector3());
@@ -135,11 +116,17 @@ function buildMesh(){
   log("Mesh built: "+shapes.length+" shapes, depth "+depth);
 }
 
-/* -------- LOAD SVG -------- */
+/* -------- SVG UPLOAD & PREVIEW -------- */
 function loadSVG(file){
+  if(!file) return;
   const reader = new FileReader();
   reader.onload = function(e){
     const text = e.target.result;
+
+    // Display raw SVG in preview
+    const preview = document.getElementById("svgPreview");
+    preview.innerHTML = text;
+
     const loader = new SVGLoader();
     const data = loader.parse(text);
 
@@ -154,24 +141,24 @@ function loadSVG(file){
   reader.readAsText(file);
 }
 
-/* -------- FILE UPLOAD -------- */
-document.getElementById("upload").addEventListener("change", function(e){
+/* -------- INPUT HANDLERS -------- */
+document.getElementById("upload").addEventListener("change", e=>{
   const file = e.target.files[0];
-  if(!file) return;
-  log("Uploaded: "+file.name);
+  if(!file){
+    log("No file selected!");
+    return;
+  }
+  log("Uploaded: "+file.name+" ("+file.type+")");
   loadSVG(file);
 });
 
-/* -------- DEPTH SLIDER -------- */
 document.getElementById("depth").oninput = buildMesh;
 
-/* -------- WIRE FRAME TOGGLE -------- */
 document.getElementById("toggleWireframe").onclick = ()=>{
   wireframe = !wireframe;
   if(mesh) mesh.material.wireframe = wireframe;
 }
 
-/* -------- EXPORT -------- */
 document.getElementById("export").onclick = ()=>{
   const link = document.createElement("a");
   link.download = "logo.png";
