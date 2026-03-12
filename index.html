@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>SVG 3D Logo Tool – Metallic Outline + Persistent Presets</title>
+<title>SVG 3D Logo Tool – Metallic Outline</title>
 <style>
 body{margin:0;background:#111;color:white;font-family:Arial;overflow:hidden;}
 #ui{
@@ -32,6 +32,9 @@ button{margin-top:5px;width:100%;padding:6px;background:#3a7cff;border:none;colo
   <br>
   Outline Depth
   <input type="range" id="outlineDepth" min="1" max="50" value="5">
+  <br>
+  Outline Scale %
+  <input type="range" id="outlineScale" min="101" max="120" value="105">
   <br>
   Override Path:
   <select id="pathSelect"><option value="">--Choose Path--</option></select>
@@ -72,7 +75,7 @@ const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHei
 camera.position.set(0,0,400);
 
 const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true, preserveDrawingBuffer:true});
-renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setSize(window.innerWidth,window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
 /* Lights */
@@ -89,11 +92,11 @@ controls.enableZoom = true;
 
 /* Variables */
 let meshGroup = null;
-let outlineGroup = null;
+let outlineMesh = null;
 let pathsData = null;
 let wireframe = false;
 const pathOverrides = new Map();
-let presets = {}; // persistent presets
+let presets = {};
 
 /* Load presets from localStorage */
 function loadPresetsFromStorage(){
@@ -111,13 +114,14 @@ loadPresetsFromStorage();
 function buildMesh(){
   if(!pathsData) return;
   if(meshGroup) scene.remove(meshGroup);
-  if(outlineGroup) scene.remove(outlineGroup);
+  if(outlineMesh) scene.remove(outlineMesh);
 
   const depth = parseFloat(document.getElementById("depth").value);
   const outlineDepth = parseFloat(document.getElementById("outlineDepth").value);
+  const outlineScale = parseFloat(document.getElementById("outlineScale").value)/100;
 
   meshGroup = new THREE.Group();
-  outlineGroup = new THREE.Group();
+  outlineMesh = new THREE.Group();
 
   // Main logo meshes
   pathsData.forEach((path,i)=>{
@@ -135,16 +139,16 @@ function buildMesh(){
     });
   });
 
-  // Single unified outline behind logo
+  // Outline: merge all paths as one combined group
   let mergedShapes = [];
   pathsData.forEach(path=>{
     mergedShapes.push(...path.toShapes(true));
   });
+
+  // For outline, slightly scale shapes
   mergedShapes.forEach(shape=>{
-    const geometry = new THREE.ExtrudeGeometry(shape,{
-      depth:outlineDepth,
-      bevelEnabled:false
-    });
+    shape.scale(outlineScale, outlineScale);
+    const geometry = new THREE.ExtrudeGeometry(shape,{depth:outlineDepth, bevelEnabled:false});
     const material = new THREE.MeshStandardMaterial({
       color: new THREE.Color("#C0C0C0"), // always silver
       metalness:1,
@@ -152,33 +156,33 @@ function buildMesh(){
       wireframe: wireframe
     });
     const mesh = new THREE.Mesh(geometry,material);
-    mesh.position.z = -outlineDepth; // behind logo
-    outlineGroup.add(mesh);
+    mesh.position.z = -outlineDepth; // sit behind
+    outlineMesh.add(mesh);
   });
 
   // Flip vertically
   meshGroup.scale.y = -1;
-  outlineGroup.scale.y = -1;
+  outlineMesh.scale.y = -1;
 
   // Center & scale
   const box = new THREE.Box3().setFromObject(meshGroup);
   const size = box.getSize(new THREE.Vector3()).length();
   const scale = 300 / size;
   meshGroup.scale.multiplyScalar(scale);
-  outlineGroup.scale.multiplyScalar(scale);
+  outlineMesh.scale.multiplyScalar(scale);
   const center = box.getCenter(new THREE.Vector3());
   meshGroup.position.sub(center.multiplyScalar(scale));
-  outlineGroup.position.sub(center.multiplyScalar(scale));
+  outlineMesh.position.sub(center.multiplyScalar(scale));
 
   // Apply pitch/yaw
   const pitch = parseFloat(document.getElementById("pitch").value) * Math.PI/180;
   const yaw = parseFloat(document.getElementById("yaw").value) * Math.PI/180;
   meshGroup.rotation.x = pitch;
   meshGroup.rotation.y = yaw;
-  outlineGroup.rotation.x = pitch;
-  outlineGroup.rotation.y = yaw;
+  outlineMesh.rotation.x = pitch;
+  outlineMesh.rotation.y = yaw;
 
-  scene.add(outlineGroup);
+  scene.add(outlineMesh);
   scene.add(meshGroup);
 
   log(`3D SVG mesh built: ${pathsData.length} paths, depth ${depth}, outline ${outlineDepth}`);
@@ -228,6 +232,7 @@ document.getElementById("upload").addEventListener("change", e=>{
 
 document.getElementById("depth").addEventListener("input", buildMesh);
 document.getElementById("outlineDepth").addEventListener("input", buildMesh);
+document.getElementById("outlineScale").addEventListener("input", buildMesh);
 document.getElementById("pitch").addEventListener("input", buildMesh);
 document.getElementById("yaw").addEventListener("input", buildMesh);
 
@@ -242,16 +247,17 @@ document.getElementById("applyOverride").onclick = ()=>{
 document.getElementById("toggleWireframe").onclick = ()=>{
   wireframe = !wireframe;
   if(meshGroup) meshGroup.children.forEach(c=>c.material.wireframe = wireframe);
-  if(outlineGroup) outlineGroup.children.forEach(c=>c.material.wireframe = wireframe);
+  if(outlineMesh) outlineMesh.children.forEach(c=>c.material.wireframe = wireframe);
 };
 
-/* Presets with persistent storage */
+/* Presets */
 document.getElementById("savePreset").onclick = ()=>{
   const name = document.getElementById("presetName").value.trim();
   if(!name){ log("Enter a preset name!"); return; }
   presets[name] = {
     depth: document.getElementById("depth").value,
     outlineDepth: document.getElementById("outlineDepth").value,
+    outlineScale: document.getElementById("outlineScale").value,
     pitch: document.getElementById("pitch").value,
     yaw: document.getElementById("yaw").value
   };
@@ -267,6 +273,7 @@ document.getElementById("loadPreset").addEventListener("change", ()=>{
   const preset = presets[name];
   document.getElementById("depth").value = preset.depth;
   document.getElementById("outlineDepth").value = preset.outlineDepth;
+  document.getElementById("outlineScale").value = preset.outlineScale;
   document.getElementById("pitch").value = preset.pitch;
   document.getElementById("yaw").value = preset.yaw;
   buildMesh();
