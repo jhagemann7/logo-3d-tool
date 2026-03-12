@@ -8,7 +8,7 @@ body{margin:0;background:#111;color:white;font-family:Arial;overflow:hidden;}
 #ui{
   position:absolute; top:20px; left:20px;
   background:#222; padding:15px; border-radius:10px;
-  width:320px; z-index:10;
+  width:360px; z-index:10;
 }
 input[type=range], select{width:100%; margin-top:5px;}
 button{margin-top:5px;width:100%;padding:6px;background:#3a7cff;border:none;color:white;border-radius:5px;cursor:pointer;}
@@ -184,9 +184,9 @@ document.getElementById("upload").addEventListener("change", e=>{
 });
 
 document.getElementById("depth").addEventListener("input", ()=>buildMesh());
-document.getElementById("materialColor").addEventListener("change", ()=>buildMesh());
 document.getElementById("pitch").addEventListener("input", ()=>buildMesh());
 document.getElementById("yaw").addEventListener("input", ()=>buildMesh());
+document.getElementById("materialColor").addEventListener("change", ()=>buildMesh());
 
 document.getElementById("applyOverride").onclick = ()=>{
   const pathIndex = document.getElementById("pathSelect").value;
