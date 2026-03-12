@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Logo 3D Tool Debug</title>
+<title>Logo 3D Tool - Fixed</title>
 
 <style>
 body{
@@ -55,8 +55,9 @@ button{
   <input type="file" id="upload" accept="image/png">
   <br><br>
   Thickness
-  <input type="range" id="depth" min="2" max="40" value="10">
+  <input type="range" id="depth" min="2" max="100" value="20">
   <button id="export">Export PNG</button>
+  <button id="toggleWireframe">Toggle Wireframe</button>
   <div id="log"></div>
 </div>
 
@@ -69,208 +70,217 @@ import { SVGLoader } from "https://esm.sh/three@0.152.2/examples/jsm/loaders/SVG
 
 /* -------- LOGGING -------- */
 function log(msg){
-  const el=document.getElementById("log")
-  const time=new Date().toLocaleTimeString()
-  el.innerHTML+="["+time+"] "+msg+"<br>"
-  el.scrollTop=el.scrollHeight
-  console.log(msg)
+  const el=document.getElementById("log");
+  const time=new Date().toLocaleTimeString();
+  el.innerHTML+="["+time+"] "+msg+"<br>";
+  el.scrollTop=el.scrollHeight;
+  console.log(msg);
 }
-log("App started")
+log("App started");
 
 /* -------- THREE.JS SETUP -------- */
-let scene = new THREE.Scene()
-let camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 2000)
-camera.position.set(0,0,300)
-let renderer = new THREE.WebGLRenderer({antialias:true, alpha:true, preserveDrawingBuffer:true})
-renderer.setSize(window.innerWidth, window.innerHeight)
-document.body.appendChild(renderer.domElement)
+let scene = new THREE.Scene();
+let camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 2000);
+camera.position.set(0,0,500); // move back
+
+let renderer = new THREE.WebGLRenderer({antialias:true, alpha:true, preserveDrawingBuffer:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
 
 /* -------- LIGHTING -------- */
-let ambient = new THREE.AmbientLight(0xffffff, 1.4)
-scene.add(ambient)
-let light = new THREE.DirectionalLight(0xffffff,1)
-light.position.set(200,200,300)
-scene.add(light)
+let ambient = new THREE.AmbientLight(0xffffff, 1.2);
+scene.add(ambient);
+let directional = new THREE.DirectionalLight(0xffffff,1);
+directional.position.set(200,200,300);
+scene.add(directional);
 
 /* -------- VARIABLES -------- */
-let mesh, shapes
-let dragging=false, lastX=0, lastY=0
+let mesh, shapes;
+let dragging=false, lastX=0, lastY=0;
+let wireframe=false;
 
 /* -------- BUILD MESH -------- */
 function buildMesh(){
-  if(!shapes) return
+  if(!shapes) return;
   try{
-    if(mesh) scene.remove(mesh)
+    if(mesh) scene.remove(mesh);
 
-    let depth = document.getElementById("depth").value
-    log("Building 3D mesh")
+    let depth = parseFloat(document.getElementById("depth").value);
+    log("Building 3D mesh with depth "+depth);
 
-    let geometry = new THREE.ExtrudeGeometry(shapes, {depth:depth, bevelEnabled:false})
-    geometry.center()
+    let geometry = new THREE.ExtrudeGeometry(shapes, {depth:depth, bevelEnabled:false});
+    geometry.center();
 
-    let material = new THREE.MeshStandardMaterial({color:0xffffff, metalness:0.2, roughness:0.6})
-    mesh = new THREE.Mesh(geometry, material)
+    let material = new THREE.MeshStandardMaterial({
+      color:0xffffff,
+      metalness:0.2,
+      roughness:0.6,
+      wireframe: wireframe
+    });
 
-    // Auto-scale to screen
-    const box = new THREE.Box3().setFromObject(mesh)
-    const size = box.getSize(new THREE.Vector3()).length()
-    const scale = 200 / size
-    mesh.scale.set(scale,-scale,scale)
+    mesh = new THREE.Mesh(geometry, material);
+
+    // Auto-scale to fit screen
+    const box = new THREE.Box3().setFromObject(mesh);
+    const size = box.getSize(new THREE.Vector3()).length();
+    const scale = 300 / size; // increase scale factor to fill screen
+    mesh.scale.set(scale, -scale, scale);
 
     // Center mesh
-    const center = box.getCenter(new THREE.Vector3())
-    mesh.position.sub(center)
+    const center = box.getCenter(new THREE.Vector3());
+    mesh.position.sub(center.multiplyScalar(scale));
 
-    scene.add(mesh)
-    log("Mesh complete")
+    scene.add(mesh);
+    log("Mesh complete");
   } catch(err){
-    log("Mesh error: "+err)
+    log("Mesh error: "+err);
   }
 }
 
 /* -------- PARSE SVG -------- */
 function parseSVG(svg){
   try{
-    log("Parsing SVG")
-    let loader = new SVGLoader()
-    let data = loader.parse(svg)
-    shapes = []
+    log("Parsing SVG");
+    let loader = new SVGLoader();
+    let data = loader.parse(svg);
+    shapes = [];
 
     data.paths.forEach(path=>{
-      let newShapes = path.toShapes(true)
+      let newShapes = path.toShapes(true);
       newShapes.forEach(shape=>{
-        // filter tiny artifacts
-        const geo = new THREE.ShapeGeometry(shape)
-        geo.computeBoundingBox()
-        const box = geo.boundingBox
-        const size = (box.max.x-box.min.x)*(box.max.y-box.min.y)
-        if(size>50) shapes.push(shape)
-      })
-    })
+        const geo = new THREE.ShapeGeometry(shape);
+        geo.computeBoundingBox();
+        const box = geo.boundingBox;
+        const size = (box.max.x-box.min.x)*(box.max.y-box.min.y);
+        if(size>20) shapes.push(shape); // filter tiny shapes
+      });
+    });
 
-    log("Shapes detected: "+shapes.length)
-    buildMesh()
+    log("Shapes detected: "+shapes.length);
+    buildMesh();
   } catch(err){
-    log("SVG parse error: "+err)
+    log("SVG parse error: "+err);
   }
 }
 
-/* -------- CONVERT PNG TO SILHOUETTE WITH DEBUG -------- */
+/* -------- CONVERT PNG TO SILHOUETTE -------- */
 function convertPNG(url){
-  log("Loading PNG")
-  const img = new Image()
-  img.crossOrigin="anonymous"
+  log("Loading PNG");
+  const img = new Image();
+  img.crossOrigin="anonymous";
 
   img.onload=function(){
-    log("Image loaded")
+    log("Image loaded");
 
-    const canvas = document.createElement("canvas")
-    canvas.width = img.width
-    canvas.height = img.height
-    const ctx = canvas.getContext("2d")
-    ctx.drawImage(img,0,0)
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img,0,0);
 
-    // ===== DEBUG CANVAS =====
-    const debugCanvas = document.createElement("canvas")
-    debugCanvas.width = img.width
-    debugCanvas.height = img.height
-    debugCanvas.style.border = "2px solid red"
-    debugCanvas.style.position = "absolute"
-    debugCanvas.style.top = "150px"
-    debugCanvas.style.left = "20px"
-    document.body.appendChild(debugCanvas)
-    const debugCtx = debugCanvas.getContext("2d")
-    debugCtx.drawImage(img,0,0)
-    log("Debug canvas added — check visual input")
+    // Debug canvas to check raw input
+    const debugCanvas = document.createElement("canvas");
+    debugCanvas.width = img.width;
+    debugCanvas.height = img.height;
+    debugCanvas.style.border = "2px solid red";
+    debugCanvas.style.position = "absolute";
+    debugCanvas.style.top = "150px";
+    debugCanvas.style.left = "20px";
+    document.body.appendChild(debugCanvas);
+    debugCanvas.getContext("2d").drawImage(img,0,0);
+    log("Debug canvas added — check visual input");
 
-    // ===== PROCESS IMAGE =====
-    const imgData = ctx.getImageData(0,0,canvas.width,canvas.height)
-    const d = imgData.data
+    const imgData = ctx.getImageData(0,0,canvas.width,canvas.height);
+    const d = imgData.data;
 
-    let transparentPixels = 0
-    let coloredPixels = 0
+    let transparentPixels = 0, coloredPixels = 0;
 
     for(let i=0;i<d.length;i+=4){
-      const r=d[i], g=d[i+1], b=d[i+2]
-      const brightness = (r+g+b)/3
+      const r=d[i], g=d[i+1], b=d[i+2];
+      const brightness = (r+g+b)/3;
       if(brightness>220){ 
-        d[i+3] = 0 // transparent background
-        transparentPixels++
+        d[i+3] = 0; // transparent background
+        transparentPixels++;
       } else {
-        d[i]=0; d[i+1]=0; d[i+2]=0; d[i+3]=255 // black logo
-        coloredPixels++
+        d[i]=0; d[i+1]=0; d[i+2]=0; d[i+3]=255; // black logo
+        coloredPixels++;
       }
     }
 
-    log(`Pixel stats — transparent: ${transparentPixels}, logo: ${coloredPixels}`)
-    ctx.putImageData(imgData,0,0)
+    log(`Pixel stats — transparent: ${transparentPixels}, logo: ${coloredPixels}`);
+    ctx.putImageData(imgData,0,0);
 
-    log("Tracing logo to SVG")
+    log("Tracing logo to SVG");
     const svg = ImageTracer.imagedataToSVG(
       ctx.getImageData(0,0,canvas.width,canvas.height),
       {ltres:0.5, qtres:0.5, numberofcolors:2, pathomit:4}
-    )
+    );
 
-    parseSVG(svg)
+    parseSVG(svg);
   }
 
-  img.src = url
+  img.src = url;
 }
 
 /* -------- FILE UPLOAD -------- */
 document.getElementById("upload").addEventListener("change",function(e){
-  const file = e.target.files[0]
-  if(!file) return
-  log("Uploaded: "+file.name)
-  const url = URL.createObjectURL(file)
-  convertPNG(url)
-})
+  const file = e.target.files[0];
+  if(!file) return;
+  log("Uploaded: "+file.name);
+  const url = URL.createObjectURL(file);
+  convertPNG(url);
+});
 
 /* -------- DEPTH SLIDER -------- */
-document.getElementById("depth").oninput = buildMesh
+document.getElementById("depth").oninput = buildMesh;
+
+/* -------- WIRE FRAME TOGGLE -------- */
+document.getElementById("toggleWireframe").onclick = ()=>{
+  wireframe = !wireframe;
+  if(mesh) mesh.material.wireframe = wireframe;
+}
 
 /* -------- ROTATION -------- */
 renderer.domElement.addEventListener("mousedown", e=>{
-  dragging=true
-  lastX=e.clientX
-  lastY=e.clientY
-})
+  dragging=true;
+  lastX=e.clientX;
+  lastY=e.clientY;
+});
 
-window.addEventListener("mouseup", ()=>dragging=false)
+window.addEventListener("mouseup", ()=>dragging=false);
 
 window.addEventListener("mousemove", e=>{
-  if(!dragging || !mesh) return
-  const dx=e.clientX-lastX
-  const dy=e.clientY-lastY
-  mesh.rotation.y += dx*0.01
-  mesh.rotation.x += dy*0.01
-  lastX = e.clientX
-  lastY = e.clientY
-})
+  if(!dragging || !mesh) return;
+  const dx=e.clientX-lastX;
+  const dy=e.clientY-lastY;
+  mesh.rotation.y += dx*0.01;
+  mesh.rotation.x += dy*0.01;
+  lastX = e.clientX;
+  lastY = e.clientY;
+});
 
 /* -------- EXPORT -------- */
 document.getElementById("export").onclick=function(){
-  log("Exporting PNG")
-  const link=document.createElement("a")
-  link.download="logo.png"
-  link.href = renderer.domElement.toDataURL()
-  link.click()
+  log("Exporting PNG");
+  const link=document.createElement("a");
+  link.download="logo.png";
+  link.href = renderer.domElement.toDataURL();
+  link.click();
 }
 
 /* -------- RENDER LOOP -------- */
 function animate(){
-  requestAnimationFrame(animate)
-  renderer.render(scene, camera)
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
 }
-animate()
+animate();
 
 /* -------- RESIZE -------- */
 window.addEventListener("resize", function(){
-  camera.aspect = window.innerWidth/window.innerHeight
-  camera.updateProjectionMatrix()
-  renderer.setSize(window.innerWidth, window.innerHeight)
-})
-
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
 </script>
 </body>
 </html>
