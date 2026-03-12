@@ -78,33 +78,35 @@ Thickness
 import * as THREE from "https://esm.sh/three@0.152.2?bundle";
 import { SVGLoader } from "https://esm.sh/three@0.152.2/examples/jsm/loaders/SVGLoader.js?bundle";
 
+/* ---------------- LOGGING ---------------- */
+
 function log(msg){
-const el=document.getElementById("log")
-const time=new Date().toLocaleTimeString()
-el.innerHTML+="["+time+"] "+msg+"<br>"
-el.scrollTop=el.scrollHeight
-console.log(msg)
+  const el=document.getElementById("log")
+  const time=new Date().toLocaleTimeString()
+  el.innerHTML+="["+time+"] "+msg+"<br>"
+  el.scrollTop=el.scrollHeight
+  console.log(msg)
 }
 
 log("App started")
 
-/* ---------------- SCENE ---------------- */
+/* ---------------- THREE.JS SETUP ---------------- */
 
 let scene=new THREE.Scene()
 
 let camera=new THREE.PerspectiveCamera(
-45,
-window.innerWidth/window.innerHeight,
-0.1,
-2000
+  45,
+  window.innerWidth/window.innerHeight,
+  0.1,
+  2000
 )
 
 camera.position.set(0,0,300)
 
 let renderer=new THREE.WebGLRenderer({
-antialias:true,
-alpha:true,
-preserveDrawingBuffer:true
+  antialias:true,
+  alpha:true,
+  preserveDrawingBuffer:true
 })
 
 renderer.setSize(window.innerWidth,window.innerHeight)
@@ -123,7 +125,6 @@ scene.add(light)
 
 let mesh
 let shapes
-
 let dragging=false
 let lastX=0
 let lastY=0
@@ -131,185 +132,128 @@ let lastY=0
 /* ---------------- BUILD MESH ---------------- */
 
 function buildMesh(){
+  if(!shapes) return
 
-if(!shapes) return
+  try{
+    if(mesh) scene.remove(mesh)
 
-try{
+    let depth=document.getElementById("depth").value
+    log("Building 3D mesh")
 
-if(mesh) scene.remove(mesh)
+    let geometry=new THREE.ExtrudeGeometry(shapes,{
+      depth:depth,
+      bevelEnabled:false
+    })
 
-let depth=document.getElementById("depth").value
+    geometry.center()
 
-log("Building 3D mesh")
+    let material=new THREE.MeshStandardMaterial({
+      color:0xffffff,
+      metalness:0.2,
+      roughness:0.6
+    })
 
-let geometry=new THREE.ExtrudeGeometry(
-shapes,
-{
-depth:depth,
-bevelEnabled:false
-}
-)
+    mesh=new THREE.Mesh(geometry,material)
 
-geometry.center()
+    // Auto scale to screen
+    const box=new THREE.Box3().setFromObject(mesh)
+    const size=box.getSize(new THREE.Vector3()).length()
+    const scale=200/size
+    mesh.scale.set(scale,-scale,scale)
 
-let material=new THREE.MeshStandardMaterial({
-color:0xffffff,
-metalness:0.2,
-roughness:0.6
-})
+    // Center mesh
+    const center=box.getCenter(new THREE.Vector3())
+    mesh.position.sub(center)
 
-mesh=new THREE.Mesh(geometry,material)
+    scene.add(mesh)
+    log("Mesh complete")
 
-/* Auto scale to screen */
-
-const box=new THREE.Box3().setFromObject(mesh)
-const size=box.getSize(new THREE.Vector3()).length()
-
-const scale=200/size
-
-mesh.scale.set(scale,-scale,scale)
-
-/* Center mesh */
-
-const center=box.getCenter(new THREE.Vector3())
-mesh.position.sub(center)
-
-scene.add(mesh)
-
-log("Mesh complete")
-
-}catch(err){
-
-log("Mesh error: "+err)
-
+  }catch(err){
+    log("Mesh error: "+err)
+  }
 }
 
-}
-
-/* ---------------- SVG PARSER ---------------- */
+/* ---------------- PARSE SVG ---------------- */
 
 function parseSVG(svg){
+  try{
+    log("Parsing SVG")
+    let loader=new SVGLoader()
+    let data=loader.parse(svg)
+    shapes=[]
 
-try{
+    data.paths.forEach(path=>{
+      let newShapes=path.toShapes(true)
+      newShapes.forEach(shape=>{
+        // ignore tiny artifacts
+        const geo=new THREE.ShapeGeometry(shape)
+        geo.computeBoundingBox()
+        const box=geo.boundingBox
+        const size=(box.max.x-box.min.x)*(box.max.y-box.min.y)
+        if(size>50){ shapes.push(shape) }
+      })
+    })
 
-log("Parsing SVG")
-
-let loader=new SVGLoader()
-
-let data=loader.parse(svg)
-
-shapes=[]
-
-data.paths.forEach(path=>{
-
-let newShapes=path.toShapes(true)
-
-if(newShapes.length>0){
-
-shapes.push(...newShapes)
-
+    log("Shapes detected: "+shapes.length)
+    buildMesh()
+  }catch(err){
+    log("SVG parse error: "+err)
+  }
 }
 
-})
-
-log("Shapes detected: "+shapes.length)
-
-buildMesh()
-
-}catch(err){
-
-log("SVG parse error: "+err)
-
-}
-
-}
-
-/* ---------------- BACKGROUND REMOVAL ---------------- */
-
-function removeWhiteBackground(imageData){
-
-let d=imageData.data
-
-for(let i=0;i<d.length;i+=4){
-
-let r=d[i]
-let g=d[i+1]
-let b=d[i+2]
-
-if(r>240 && g>240 && b>240){
-
-d[i+3]=0
-
-}
-
-}
-
-return imageData
-
-}
-
-/* ---------------- PNG TO SVG ---------------- */
+/* ---------------- PNG TO SILHOUETTE ---------------- */
 
 function convertPNG(url){
+  log("Loading PNG")
 
-log("Loading PNG")
+  let img=new Image()
+  img.crossOrigin="anonymous"
 
-let img=new Image()
-img.crossOrigin="anonymous"
+  img.onload=function(){
+    log("Image loaded")
 
-img.onload=function(){
+    let canvas=document.createElement("canvas")
+    canvas.width=img.width
+    canvas.height=img.height
 
-log("Image loaded")
+    let ctx=canvas.getContext("2d")
+    ctx.drawImage(img,0,0)
 
-let canvas=document.createElement("canvas")
-canvas.width=img.width
-canvas.height=img.height
+    let imgData=ctx.getImageData(0,0,canvas.width,canvas.height)
+    let d=imgData.data
 
-let ctx=canvas.getContext("2d")
+    // Convert to black silhouette
+    for(let i=0;i<d.length;i+=4){
+      let r=d[i], g=d[i+1], b=d[i+2]
+      let brightness=(r+g+b)/3
+      if(brightness>220){ d[i+3]=0 }       // transparent background
+      else{ d[i]=0; d[i+1]=0; d[i+2]=0; d[i+3]=255 } // black logo
+    }
 
-ctx.drawImage(img,0,0)
+    ctx.putImageData(imgData,0,0)
 
-let imgData=ctx.getImageData(0,0,canvas.width,canvas.height)
+    log("Tracing silhouette")
+    let svg=ImageTracer.imagedataToSVG(imgData,{
+      ltres:0.5,
+      qtres:0.5,
+      numberofcolors:2,
+      pathomit:4
+    })
 
-/* Remove white background */
+    parseSVG(svg)
+  }
 
-imgData=removeWhiteBackground(imgData)
-
-ctx.putImageData(imgData,0,0)
-
-log("Tracing image")
-
-let svg=ImageTracer.imagedataToSVG(imgData,{
-ltres:1,
-qtres:1,
-numberofcolors:6,
-pathomit:8
-})
-
-log("SVG created")
-
-parseSVG(svg)
-
-}
-
-img.src=url
-
+  img.src=url
 }
 
 /* ---------------- FILE UPLOAD ---------------- */
 
 document.getElementById("upload").addEventListener("change",function(e){
-
-let file=e.target.files[0]
-
-if(!file) return
-
-log("Uploaded: "+file.name)
-
-let url=URL.createObjectURL(file)
-
-convertPNG(url)
-
+  let file=e.target.files[0]
+  if(!file) return
+  log("Uploaded: "+file.name)
+  let url=URL.createObjectURL(file)
+  convertPNG(url)
 })
 
 /* ---------------- DEPTH SLIDER ---------------- */
@@ -319,52 +263,38 @@ document.getElementById("depth").oninput=buildMesh
 /* ---------------- ROTATION ---------------- */
 
 renderer.domElement.addEventListener("mousedown",e=>{
-dragging=true
-lastX=e.clientX
-lastY=e.clientY
+  dragging=true
+  lastX=e.clientX
+  lastY=e.clientY
 })
 
 window.addEventListener("mouseup",()=>dragging=false)
 
 window.addEventListener("mousemove",e=>{
-
-if(!dragging || !mesh) return
-
-let dx=e.clientX-lastX
-let dy=e.clientY-lastY
-
-mesh.rotation.y+=dx*0.01
-mesh.rotation.x+=dy*0.01
-
-lastX=e.clientX
-lastY=e.clientY
-
+  if(!dragging || !mesh) return
+  let dx=e.clientX-lastX
+  let dy=e.clientY-lastY
+  mesh.rotation.y+=dx*0.01
+  mesh.rotation.x+=dy*0.01
+  lastX=e.clientX
+  lastY=e.clientY
 })
 
 /* ---------------- EXPORT ---------------- */
 
 document.getElementById("export").onclick=function(){
-
-log("Exporting PNG")
-
-let link=document.createElement("a")
-
-link.download="logo.png"
-
-link.href=renderer.domElement.toDataURL()
-
-link.click()
-
+  log("Exporting PNG")
+  let link=document.createElement("a")
+  link.download="logo.png"
+  link.href=renderer.domElement.toDataURL()
+  link.click()
 }
 
 /* ---------------- RENDER LOOP ---------------- */
 
 function animate(){
-
-requestAnimationFrame(animate)
-
-renderer.render(scene,camera)
-
+  requestAnimationFrame(animate)
+  renderer.render(scene,camera)
 }
 
 animate()
@@ -372,12 +302,9 @@ animate()
 /* ---------------- RESIZE ---------------- */
 
 window.addEventListener("resize",function(){
-
-camera.aspect=window.innerWidth/window.innerHeight
-camera.updateProjectionMatrix()
-
-renderer.setSize(window.innerWidth,window.innerHeight)
-
+  camera.aspect=window.innerWidth/window.innerHeight
+  camera.updateProjectionMatrix()
+  renderer.setSize(window.innerWidth,window.innerHeight)
 })
 
 </script>
