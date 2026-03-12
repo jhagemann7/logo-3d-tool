@@ -27,11 +27,11 @@ button{
   Thickness
   <input type="range" id="depth" min="2" max="100" value="20">
   <br>
-  Material Color
+  Material Tint
   <select id="materialColor">
     <option value="#FFD700">Gold</option>
     <option value="#C0C0C0">Silver</option>
-    <option value="#00FFFF" selected>Custom (Cyan)</option>
+    <option value="#00FFFF" selected>Cyan</option>
   </select>
   <button id="toggleWireframe">Toggle Wireframe</button>
   <button id="export">Export PNG</button>
@@ -85,22 +85,21 @@ function buildMesh(){
   if(meshGroup) scene.remove(meshGroup);
 
   const depth = parseFloat(document.getElementById("depth").value);
-  const selectedColor = document.getElementById("materialColor").value;
+  const tintColor = new THREE.Color(document.getElementById("materialColor").value);
   meshGroup = new THREE.Group();
 
   pathsData.forEach(path => {
-    const pathColor = path.userData.style.fill;
+    let pathColor = path.userData.style.fill;
     if(!pathColor || pathColor === "none") return; // skip empty fill
     const shapes = path.toShapes(true);
 
     shapes.forEach(shape => {
-      // Flip Y to show right-side up
-      shape.applyMatrix4(new THREE.Matrix4().makeScale(1, -1, 1));
-
-      const geometry = new THREE.ExtrudeGeometry(shape, {depth:depth, bevelEnabled:false});
-      // Use metallic/epoxy material
+      const geometry = new THREE.ExtrudeGeometry(shape, {depth: depth, bevelEnabled:false});
+      const originalColor = new THREE.Color(pathColor);
+      // Mix original path color with selected tint (50%)
+      const finalColor = originalColor.clone().lerp(tintColor, 0.5);
       const material = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(selectedColor),
+        color: finalColor,
         metalness:0.8,
         roughness:0.2,
         wireframe: wireframe
@@ -110,17 +109,19 @@ function buildMesh(){
     });
   });
 
+  // Flip whole group vertically to match SVG
+  meshGroup.scale.y = -1;
+
   // Center and auto-scale
   const box = new THREE.Box3().setFromObject(meshGroup);
   const size = box.getSize(new THREE.Vector3()).length();
   const scale = 300 / size;
   meshGroup.scale.multiplyScalar(scale);
-
   const center = box.getCenter(new THREE.Vector3());
   meshGroup.position.sub(center.multiplyScalar(scale));
 
   scene.add(meshGroup);
-  log(`3D SVG mesh built: ${pathsData.length} paths, depth ${depth}, color ${selectedColor}`);
+  log(`3D SVG mesh built: ${pathsData.length} paths, depth ${depth}`);
 }
 
 /* Load SVG */
