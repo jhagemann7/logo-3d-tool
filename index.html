@@ -11,11 +11,7 @@ body{margin:0;background:#111;color:white;font-family:Arial;overflow:hidden;}
   width:320px; z-index:10;
 }
 input[type=range], select{width:100%; margin-top:5px;}
-button{
-  margin-top:5px; width:100%; padding:6px;
-  background:#3a7cff; border:none; color:white;
-  border-radius:5px; cursor:pointer;
-}
+button{margin-top:5px;width:100%;padding:6px;background:#3a7cff;border:none;color:white;border-radius:5px;cursor:pointer;}
 #log{margin-top:10px;font-size:12px;background:#000;padding:8px;height:120px;overflow:auto;border-radius:6px;}
 </style>
 </head>
@@ -27,12 +23,27 @@ button{
   Thickness
   <input type="range" id="depth" min="2" max="100" value="20">
   <br>
+  Pitch
+  <input type="range" id="pitch" min="-180" max="180" value="0">
+  <br>
+  Yaw
+  <input type="range" id="yaw" min="-180" max="180" value="0">
+  <br>
   Material Tint
   <select id="materialColor">
     <option value="#FFD700">Gold</option>
     <option value="#C0C0C0">Silver</option>
     <option value="#00FFFF" selected>Cyan</option>
   </select>
+  <br>
+  Override Path:
+  <select id="pathSelect"><option value="">--Choose Path--</option></select>
+  <select id="overrideColor">
+    <option value="#FFD700">Gold</option>
+    <option value="#C0C0C0">Silver</option>
+    <option value="#00FFFF">Cyan</option>
+  </select>
+  <button id="applyOverride">Apply Override</button>
   <button id="toggleWireframe">Toggle Wireframe</button>
   <button id="export">Export PNG</button>
   <div id="log"></div>
@@ -78,6 +89,7 @@ controls.enableZoom = true;
 let meshGroup = null;
 let pathsData = null;
 let wireframe = false;
+const pathOverrides = new Map();
 
 /* Build mesh from paths */
 function buildMesh(){
@@ -88,19 +100,19 @@ function buildMesh(){
   const tintColor = new THREE.Color(document.getElementById("materialColor").value);
   meshGroup = new THREE.Group();
 
-  pathsData.forEach(path => {
-    let pathColor = path.userData.style.fill;
-    if(!pathColor || pathColor === "none") return;
-    const shapes = path.toShapes(true);
+  pathsData.forEach((path, i) => {
+    let pathColor = pathOverrides.has(i)
+        ? pathOverrides.get(i)
+        : (path.userData.style.fill || "#ffffff");
 
-    shapes.forEach(shape => {
-      const geometry = new THREE.ExtrudeGeometry(shape, {depth: depth, bevelEnabled:false});
-      const originalColor = new THREE.Color(pathColor);
-      const finalColor = originalColor.clone().lerp(tintColor, 0.5); // blend with selected tint
+    const shapes = path.toShapes(true);
+    shapes.forEach(shape=>{
+      const geometry = new THREE.ExtrudeGeometry(shape,{depth:depth, bevelEnabled:false});
+      const finalColor = new THREE.Color(pathColor).lerp(tintColor, 0.5);
       const material = new THREE.MeshStandardMaterial({
         color: finalColor,
-        metalness: 0.8,
-        roughness: 0.2,
+        metalness:0.8,
+        roughness:0.2,
         wireframe: wireframe
       });
       const mesh = new THREE.Mesh(geometry, material);
@@ -111,13 +123,19 @@ function buildMesh(){
   // Flip whole group vertically
   meshGroup.scale.y = -1;
 
-  // Center and auto-scale
+  // Center & auto-scale
   const box = new THREE.Box3().setFromObject(meshGroup);
   const size = box.getSize(new THREE.Vector3()).length();
   const scale = 300 / size;
   meshGroup.scale.multiplyScalar(scale);
   const center = box.getCenter(new THREE.Vector3());
   meshGroup.position.sub(center.multiplyScalar(scale));
+
+  // Apply pitch and yaw from sliders
+  const pitch = parseFloat(document.getElementById("pitch").value) * Math.PI/180;
+  const yaw = parseFloat(document.getElementById("yaw").value) * Math.PI/180;
+  meshGroup.rotation.x = pitch;
+  meshGroup.rotation.y = yaw;
 
   scene.add(meshGroup);
   log(`3D SVG mesh built: ${pathsData.length} paths, depth ${depth}`);
@@ -131,28 +149,52 @@ function loadSVG(file){
     const text = e.target.result;
     const loader = new SVGLoader();
     const data = loader.parse(text);
-
     if(!data.paths.length){
       log("No paths found in SVG!");
       return;
     }
-
     pathsData = data.paths;
+    pathOverrides.clear();
+    updatePathSelect();
     buildMesh();
   };
   reader.readAsText(file);
 }
 
-/* Input handlers */
+/* Update path dropdown */
+function updatePathSelect(){
+  const select = document.getElementById("pathSelect");
+  select.innerHTML = '<option value="">--Choose Path--</option>';
+  if(!pathsData) return;
+  pathsData.forEach((p,i)=>{
+    const name = p.userData.id || `Path ${i}`;
+    const opt = document.createElement("option");
+    opt.value = i;
+    opt.textContent = name;
+    select.appendChild(opt);
+  });
+}
+
+/* Event handlers */
 document.getElementById("upload").addEventListener("change", e=>{
   const file = e.target.files[0];
-  if(!file){ log("No file selected!"); return; }
+  if(!file) return;
   log(`Uploaded: ${file.name} (${file.type})`);
   loadSVG(file);
 });
 
 document.getElementById("depth").addEventListener("input", ()=>buildMesh());
 document.getElementById("materialColor").addEventListener("change", ()=>buildMesh());
+document.getElementById("pitch").addEventListener("input", ()=>buildMesh());
+document.getElementById("yaw").addEventListener("input", ()=>buildMesh());
+
+document.getElementById("applyOverride").onclick = ()=>{
+  const pathIndex = document.getElementById("pathSelect").value;
+  const color = document.getElementById("overrideColor").value;
+  if(pathIndex==="") return;
+  pathOverrides.set(Number(pathIndex), color);
+  buildMesh();
+};
 
 document.getElementById("toggleWireframe").onclick = ()=>{
   wireframe = !wireframe;
