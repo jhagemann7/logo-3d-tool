@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Logo 3D Tool</title>
+<title>Logo 3D Tool Debug</title>
 
 <style>
 body{
@@ -155,7 +155,7 @@ function parseSVG(svg){
   }
 }
 
-/* -------- CONVERT PNG TO SILHOUETTE -------- */
+/* -------- CONVERT PNG TO SILHOUETTE WITH DEBUG -------- */
 function convertPNG(url){
   log("Loading PNG")
   const img = new Image()
@@ -163,23 +163,46 @@ function convertPNG(url){
 
   img.onload=function(){
     log("Image loaded")
+
     const canvas = document.createElement("canvas")
     canvas.width = img.width
     canvas.height = img.height
     const ctx = canvas.getContext("2d")
     ctx.drawImage(img,0,0)
 
+    // ===== DEBUG CANVAS =====
+    const debugCanvas = document.createElement("canvas")
+    debugCanvas.width = img.width
+    debugCanvas.height = img.height
+    debugCanvas.style.border = "2px solid red"
+    debugCanvas.style.position = "absolute"
+    debugCanvas.style.top = "150px"
+    debugCanvas.style.left = "20px"
+    document.body.appendChild(debugCanvas)
+    const debugCtx = debugCanvas.getContext("2d")
+    debugCtx.drawImage(img,0,0)
+    log("Debug canvas added — check visual input")
+
+    // ===== PROCESS IMAGE =====
     const imgData = ctx.getImageData(0,0,canvas.width,canvas.height)
     const d = imgData.data
 
-    // Convert to black silhouette
+    let transparentPixels = 0
+    let coloredPixels = 0
+
     for(let i=0;i<d.length;i+=4){
       const r=d[i], g=d[i+1], b=d[i+2]
       const brightness = (r+g+b)/3
-      if(brightness>220){ d[i+3]=0 } // transparent background
-      else{ d[i]=0; d[i+1]=0; d[i+2]=0; d[i+3]=255 } // black logo
+      if(brightness>220){ 
+        d[i+3] = 0 // transparent background
+        transparentPixels++
+      } else {
+        d[i]=0; d[i+1]=0; d[i+2]=0; d[i+3]=255 // black logo
+        coloredPixels++
+      }
     }
 
+    log(`Pixel stats — transparent: ${transparentPixels}, logo: ${coloredPixels}`)
     ctx.putImageData(imgData,0,0)
 
     log("Tracing logo to SVG")
