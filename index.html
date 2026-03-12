@@ -2,15 +2,15 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>SVG 3D Logo Tool</title>
+<title>SVG 3D Logo Tool – Metal/Epoxy</title>
 <style>
 body{margin:0;background:#111;color:white;font-family:Arial;overflow:hidden;}
 #ui{
   position:absolute; top:20px; left:20px;
   background:#222; padding:15px; border-radius:10px;
-  width:300px; z-index:10;
+  width:320px; z-index:10;
 }
-input[type=range]{width:100%;}
+input[type=range], select{width:100%; margin-top:5px;}
 button{
   margin-top:5px; width:100%; padding:6px;
   background:#3a7cff; border:none; color:white;
@@ -26,6 +26,13 @@ button{
   <br><br>
   Thickness
   <input type="range" id="depth" min="2" max="100" value="20">
+  <br>
+  Material Color
+  <select id="materialColor">
+    <option value="#FFD700">Gold</option>
+    <option value="#C0C0C0">Silver</option>
+    <option value="#00FFFF" selected>Custom (Cyan)</option>
+  </select>
   <button id="toggleWireframe">Toggle Wireframe</button>
   <button id="export">Export PNG</button>
   <div id="log"></div>
@@ -78,6 +85,7 @@ function buildMesh(){
   if(meshGroup) scene.remove(meshGroup);
 
   const depth = parseFloat(document.getElementById("depth").value);
+  const selectedColor = document.getElementById("materialColor").value;
   meshGroup = new THREE.Group();
 
   pathsData.forEach(path => {
@@ -86,20 +94,21 @@ function buildMesh(){
     const shapes = path.toShapes(true);
 
     shapes.forEach(shape => {
-      const geometry = new THREE.ExtrudeGeometry(shape, {depth: depth, bevelEnabled: false});
+      // Flip Y to show right-side up
+      shape.applyMatrix4(new THREE.Matrix4().makeScale(1, -1, 1));
+
+      const geometry = new THREE.ExtrudeGeometry(shape, {depth:depth, bevelEnabled:false});
+      // Use metallic/epoxy material
       const material = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(pathColor),
-        metalness:0.2,
-        roughness:0.6,
+        color: new THREE.Color(selectedColor),
+        metalness:0.8,
+        roughness:0.2,
         wireframe: wireframe
       });
       const mesh = new THREE.Mesh(geometry, material);
       meshGroup.add(mesh);
     });
   });
-
-  // Flip the group vertically to match SVG orientation
-  meshGroup.scale.y = -1;
 
   // Center and auto-scale
   const box = new THREE.Box3().setFromObject(meshGroup);
@@ -111,7 +120,7 @@ function buildMesh(){
   meshGroup.position.sub(center.multiplyScalar(scale));
 
   scene.add(meshGroup);
-  log(`3D SVG mesh built: ${pathsData.length} paths, depth ${depth}`);
+  log(`3D SVG mesh built: ${pathsData.length} paths, depth ${depth}, color ${selectedColor}`);
 }
 
 /* Load SVG */
@@ -143,6 +152,7 @@ document.getElementById("upload").addEventListener("change", e=>{
 });
 
 document.getElementById("depth").addEventListener("input", ()=>buildMesh());
+document.getElementById("materialColor").addEventListener("change", ()=>buildMesh());
 
 document.getElementById("toggleWireframe").onclick = ()=>{
   wireframe = !wireframe;
