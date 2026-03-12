@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Logo 3D Tool - Fixed</title>
+<title>Logo 3D Tool - SVG Only</title>
 
 <style>
 body{
@@ -45,6 +45,7 @@ button{
   color:white;
   border-radius:5px;
   cursor:pointer;
+  margin-top:5px;
 }
 </style>
 </head>
@@ -52,21 +53,19 @@ button{
 <body>
 
 <div id="ui">
-  <input type="file" id="upload" accept="image/png">
+  <input type="file" id="upload" accept=".svg">
   <br><br>
   Thickness
   <input type="range" id="depth" min="2" max="100" value="20">
-  <button id="export">Export PNG</button>
   <button id="toggleWireframe">Toggle Wireframe</button>
+  <button id="export">Export PNG</button>
   <div id="log"></div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/imagetracerjs@1.2.6/imagetracer_v1.2.6.min.js"></script>
-
 <script type="module">
-
 import * as THREE from "https://esm.sh/three@0.152.2?bundle";
 import { SVGLoader } from "https://esm.sh/three@0.152.2/examples/jsm/loaders/SVGLoader.js?bundle";
+import { OrbitControls } from "https://esm.sh/three@0.152.2/examples/jsm/controls/OrbitControls.js?bundle";
 
 /* -------- LOGGING -------- */
 function log(msg){
@@ -81,7 +80,7 @@ log("App started");
 /* -------- THREE.JS SETUP -------- */
 let scene = new THREE.Scene();
 let camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 2000);
-camera.position.set(0,0,500); // move back
+camera.position.set(0,0,400);
 
 let renderer = new THREE.WebGLRenderer({antialias:true, alpha:true, preserveDrawingBuffer:true});
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -94,141 +93,73 @@ let directional = new THREE.DirectionalLight(0xffffff,1);
 directional.position.set(200,200,300);
 scene.add(directional);
 
+/* -------- CONTROLS -------- */
+let controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.enableZoom = true;
+
 /* -------- VARIABLES -------- */
-let mesh, shapes;
-let dragging=false, lastX=0, lastY=0;
+let mesh, shapes = [];
 let wireframe=false;
 
 /* -------- BUILD MESH -------- */
 function buildMesh(){
-  if(!shapes) return;
-  try{
-    if(mesh) scene.remove(mesh);
+  if(!shapes || shapes.length===0) return;
+  if(mesh) scene.remove(mesh);
 
-    let depth = parseFloat(document.getElementById("depth").value);
-    log("Building 3D mesh with depth "+depth);
+  const depth = parseFloat(document.getElementById("depth").value);
 
-    let geometry = new THREE.ExtrudeGeometry(shapes, {depth:depth, bevelEnabled:false});
-    geometry.center();
+  const geometry = new THREE.ExtrudeGeometry(shapes, {depth:depth, bevelEnabled:false});
+  geometry.center();
 
-    let material = new THREE.MeshStandardMaterial({
-      color:0xffffff,
-      metalness:0.2,
-      roughness:0.6,
-      wireframe: wireframe
-    });
+  const material = new THREE.MeshStandardMaterial({
+    color:0xffffff,
+    metalness:0.2,
+    roughness:0.6,
+    wireframe: wireframe
+  });
 
-    mesh = new THREE.Mesh(geometry, material);
+  mesh = new THREE.Mesh(geometry, material);
 
-    // Auto-scale to fit screen
-    const box = new THREE.Box3().setFromObject(mesh);
-    const size = box.getSize(new THREE.Vector3()).length();
-    const scale = 300 / size; // increase scale factor to fill screen
-    mesh.scale.set(scale, -scale, scale);
+  // Auto-scale mesh to fit view
+  const box = new THREE.Box3().setFromObject(mesh);
+  const size = box.getSize(new THREE.Vector3()).length();
+  const scale = 300 / size; // adjust scaling
+  mesh.scale.set(scale, scale, scale);
 
-    // Center mesh
-    const center = box.getCenter(new THREE.Vector3());
-    mesh.position.sub(center.multiplyScalar(scale));
+  const center = box.getCenter(new THREE.Vector3());
+  mesh.position.sub(center.multiplyScalar(scale));
 
-    scene.add(mesh);
-    log("Mesh complete");
-  } catch(err){
-    log("Mesh error: "+err);
-  }
+  scene.add(mesh);
+  log("Mesh built: "+shapes.length+" shapes, depth "+depth);
 }
 
-/* -------- PARSE SVG -------- */
-function parseSVG(svg){
-  try{
-    log("Parsing SVG");
-    let loader = new SVGLoader();
-    let data = loader.parse(svg);
+/* -------- LOAD SVG -------- */
+function loadSVG(file){
+  const reader = new FileReader();
+  reader.onload = function(e){
+    const text = e.target.result;
+    const loader = new SVGLoader();
+    const data = loader.parse(text);
+
     shapes = [];
-
     data.paths.forEach(path=>{
-      let newShapes = path.toShapes(true);
-      newShapes.forEach(shape=>{
-        const geo = new THREE.ShapeGeometry(shape);
-        geo.computeBoundingBox();
-        const box = geo.boundingBox;
-        const size = (box.max.x-box.min.x)*(box.max.y-box.min.y);
-        if(size>20) shapes.push(shape); // filter tiny shapes
-      });
+      shapes.push(...path.toShapes(true));
     });
 
-    log("Shapes detected: "+shapes.length);
+    log("SVG loaded: "+shapes.length+" shapes detected");
     buildMesh();
-  } catch(err){
-    log("SVG parse error: "+err);
-  }
-}
-
-/* -------- CONVERT PNG TO SILHOUETTE -------- */
-function convertPNG(url){
-  log("Loading PNG");
-  const img = new Image();
-  img.crossOrigin="anonymous";
-
-  img.onload=function(){
-    log("Image loaded");
-
-    const canvas = document.createElement("canvas");
-    canvas.width = img.width;
-    canvas.height = img.height;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(img,0,0);
-
-    // Debug canvas to check raw input
-    const debugCanvas = document.createElement("canvas");
-    debugCanvas.width = img.width;
-    debugCanvas.height = img.height;
-    debugCanvas.style.border = "2px solid red";
-    debugCanvas.style.position = "absolute";
-    debugCanvas.style.top = "150px";
-    debugCanvas.style.left = "20px";
-    document.body.appendChild(debugCanvas);
-    debugCanvas.getContext("2d").drawImage(img,0,0);
-    log("Debug canvas added — check visual input");
-
-    const imgData = ctx.getImageData(0,0,canvas.width,canvas.height);
-    const d = imgData.data;
-
-    let transparentPixels = 0, coloredPixels = 0;
-
-    for(let i=0;i<d.length;i+=4){
-      const r=d[i], g=d[i+1], b=d[i+2];
-      const brightness = (r+g+b)/3;
-      if(brightness>220){ 
-        d[i+3] = 0; // transparent background
-        transparentPixels++;
-      } else {
-        d[i]=0; d[i+1]=0; d[i+2]=0; d[i+3]=255; // black logo
-        coloredPixels++;
-      }
-    }
-
-    log(`Pixel stats — transparent: ${transparentPixels}, logo: ${coloredPixels}`);
-    ctx.putImageData(imgData,0,0);
-
-    log("Tracing logo to SVG");
-    const svg = ImageTracer.imagedataToSVG(
-      ctx.getImageData(0,0,canvas.width,canvas.height),
-      {ltres:0.5, qtres:0.5, numberofcolors:2, pathomit:4}
-    );
-
-    parseSVG(svg);
-  }
-
-  img.src = url;
+  };
+  reader.readAsText(file);
 }
 
 /* -------- FILE UPLOAD -------- */
-document.getElementById("upload").addEventListener("change",function(e){
+document.getElementById("upload").addEventListener("change", function(e){
   const file = e.target.files[0];
   if(!file) return;
   log("Uploaded: "+file.name);
-  const url = URL.createObjectURL(file);
-  convertPNG(url);
+  loadSVG(file);
 });
 
 /* -------- DEPTH SLIDER -------- */
@@ -240,30 +171,10 @@ document.getElementById("toggleWireframe").onclick = ()=>{
   if(mesh) mesh.material.wireframe = wireframe;
 }
 
-/* -------- ROTATION -------- */
-renderer.domElement.addEventListener("mousedown", e=>{
-  dragging=true;
-  lastX=e.clientX;
-  lastY=e.clientY;
-});
-
-window.addEventListener("mouseup", ()=>dragging=false);
-
-window.addEventListener("mousemove", e=>{
-  if(!dragging || !mesh) return;
-  const dx=e.clientX-lastX;
-  const dy=e.clientY-lastY;
-  mesh.rotation.y += dx*0.01;
-  mesh.rotation.x += dy*0.01;
-  lastX = e.clientX;
-  lastY = e.clientY;
-});
-
 /* -------- EXPORT -------- */
-document.getElementById("export").onclick=function(){
-  log("Exporting PNG");
-  const link=document.createElement("a");
-  link.download="logo.png";
+document.getElementById("export").onclick = ()=>{
+  const link = document.createElement("a");
+  link.download = "logo.png";
   link.href = renderer.domElement.toDataURL();
   link.click();
 }
@@ -271,16 +182,18 @@ document.getElementById("export").onclick=function(){
 /* -------- RENDER LOOP -------- */
 function animate(){
   requestAnimationFrame(animate);
-  renderer.render(scene, camera);
+  controls.update();
+  renderer.render(scene,camera);
 }
 animate();
 
 /* -------- RESIZE -------- */
-window.addEventListener("resize", function(){
+window.addEventListener("resize", ()=>{
   camera.aspect = window.innerWidth/window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 </script>
+
 </body>
 </html>
