@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>SVG 3D Logo Tool – Metal/Epoxy</title>
+<title>SVG 3D Logo Tool – Presets</title>
 <style>
 body{margin:0;background:#111;color:white;font-family:Arial;overflow:hidden;}
 #ui{
@@ -29,13 +29,6 @@ button{margin-top:5px;width:100%;padding:6px;background:#3a7cff;border:none;colo
   Yaw
   <input type="range" id="yaw" min="-180" max="180" value="0">
   <br>
-  Material Tint
-  <select id="materialColor">
-    <option value="#FFD700">Gold</option>
-    <option value="#C0C0C0">Silver</option>
-    <option value="#00FFFF" selected>Cyan</option>
-  </select>
-  <br>
   Override Path:
   <select id="pathSelect"><option value="">--Choose Path--</option></select>
   <select id="overrideColor">
@@ -45,6 +38,11 @@ button{margin-top:5px;width:100%;padding:6px;background:#3a7cff;border:none;colo
   </select>
   <button id="applyOverride">Apply Override</button>
   <button id="toggleWireframe">Toggle Wireframe</button>
+  <br>
+  <input type="text" id="presetName" placeholder="Preset Name">
+  <button id="savePreset">Save Preset</button>
+  <select id="loadPreset"><option value="">--Load Preset--</option></select>
+  <br>
   <button id="export">Export PNG</button>
   <div id="log"></div>
 </div>
@@ -90,6 +88,7 @@ let meshGroup = null;
 let pathsData = null;
 let wireframe = false;
 const pathOverrides = new Map();
+const presets = new Map();
 
 /* Build mesh from paths */
 function buildMesh(){
@@ -97,7 +96,6 @@ function buildMesh(){
   if(meshGroup) scene.remove(meshGroup);
 
   const depth = parseFloat(document.getElementById("depth").value);
-  const tintColor = new THREE.Color(document.getElementById("materialColor").value);
   meshGroup = new THREE.Group();
 
   pathsData.forEach((path, i) => {
@@ -108,9 +106,8 @@ function buildMesh(){
     const shapes = path.toShapes(true);
     shapes.forEach(shape=>{
       const geometry = new THREE.ExtrudeGeometry(shape,{depth:depth, bevelEnabled:false});
-      const finalColor = new THREE.Color(pathColor).lerp(tintColor, 0.5);
       const material = new THREE.MeshStandardMaterial({
-        color: finalColor,
+        color: new THREE.Color(pathColor),
         metalness:0.8,
         roughness:0.2,
         wireframe: wireframe
@@ -120,10 +117,10 @@ function buildMesh(){
     });
   });
 
-  // Flip whole group vertically
+  // Flip vertically
   meshGroup.scale.y = -1;
 
-  // Center & auto-scale
+  // Center & scale
   const box = new THREE.Box3().setFromObject(meshGroup);
   const size = box.getSize(new THREE.Vector3()).length();
   const scale = 300 / size;
@@ -131,7 +128,7 @@ function buildMesh(){
   const center = box.getCenter(new THREE.Vector3());
   meshGroup.position.sub(center.multiplyScalar(scale));
 
-  // Apply pitch and yaw from sliders
+  // Apply pitch/yaw sliders
   const pitch = parseFloat(document.getElementById("pitch").value) * Math.PI/180;
   const yaw = parseFloat(document.getElementById("yaw").value) * Math.PI/180;
   meshGroup.rotation.x = pitch;
@@ -186,7 +183,6 @@ document.getElementById("upload").addEventListener("change", e=>{
 document.getElementById("depth").addEventListener("input", ()=>buildMesh());
 document.getElementById("pitch").addEventListener("input", ()=>buildMesh());
 document.getElementById("yaw").addEventListener("input", ()=>buildMesh());
-document.getElementById("materialColor").addEventListener("change", ()=>buildMesh());
 
 document.getElementById("applyOverride").onclick = ()=>{
   const pathIndex = document.getElementById("pathSelect").value;
@@ -202,6 +198,30 @@ document.getElementById("toggleWireframe").onclick = ()=>{
     meshGroup.children.forEach(child => child.material.wireframe = wireframe);
   }
 };
+
+document.getElementById("savePreset").onclick = ()=>{
+  const name = document.getElementById("presetName").value.trim();
+  if(!name) { log("Enter a preset name!"); return; }
+  presets.set(name,{
+    depth: document.getElementById("depth").value,
+    pitch: document.getElementById("pitch").value,
+    yaw: document.getElementById("yaw").value
+  });
+  const loadSelect = document.getElementById("loadPreset");
+  loadSelect.innerHTML += `<option value="${name}">${name}</option>`;
+  log(`Preset saved: ${name}`);
+};
+
+document.getElementById("loadPreset").addEventListener("change", ()=>{
+  const name = document.getElementById("loadPreset").value;
+  if(!presets.has(name)) return;
+  const preset = presets.get(name);
+  document.getElementById("depth").value = preset.depth;
+  document.getElementById("pitch").value = preset.pitch;
+  document.getElementById("yaw").value = preset.yaw;
+  buildMesh();
+  log(`Preset loaded: ${name}`);
+});
 
 document.getElementById("export").onclick = ()=>{
   const link = document.createElement("a");
